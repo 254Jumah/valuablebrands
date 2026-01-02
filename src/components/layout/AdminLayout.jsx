@@ -1,78 +1,121 @@
 "use client";
-import React from "react";
+import { Children, useState } from "react";
 
 import {
-  Award,
   LayoutDashboard,
   Calendar,
-  Trophy,
-  FileText,
+  Award,
+  Vote,
+  BookOpen,
   Image,
+  Settings,
   LogOut,
-  Sun,
-  Moon,
   Menu,
+  Bell,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useTheme } from "@/contexts/ThemeContext";
+import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 
-const adminNavItems = [
+const sidebarLinks = [
   { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
   { name: "Events", path: "/admin/events", icon: Calendar },
-  { name: "Awards", path: "/admin/awards", icon: Trophy },
-  { name: "Blog", path: "/admin/blog", icon: FileText },
+  { name: "Awards", path: "/admin/awards", icon: Award },
+  { name: "Votes", path: "/admin/votes", icon: Vote },
+  { name: "Blog", path: "/admin/blog", icon: BookOpen },
   { name: "Media", path: "/admin/media", icon: Image },
+  { name: "Settings", path: "/admin/settings", icon: Settings },
 ];
 
-export default function AdminLayout({ children }) {
-  const { theme, toggleTheme } = useTheme();
+export function AdminLayout({ children }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = usePathname();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const navigate = usePathname();
+
+  const isActive = (path) => {
+    if (path === "/admin") return location.pathname === "/admin";
+    return location?.pathname?.startsWith(path);
+  };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="min-h-screen bg-muted/30">
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform bg-sidebar transition-transform lg:relative lg:translate-x-0",
+          "fixed top-0 left-0 h-full w-64 bg-sidebar z-50 transition-transform duration-300 lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-full flex-col">
-          <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-4">
-            <Award className="h-8 w-8 text-sidebar-primary" />
-            <span className="font-display text-lg font-bold text-sidebar-foreground">
-              Admin Panel
-            </span>
+        <div className="flex flex-col h-full">
+          {/* Logo */}
+          <div className="p-6 border-b border-sidebar-border">
+            <Link href="/admin" className="flex items-center gap-3">
+              <div className="w-10 h-10 gradient-gold rounded-lg flex items-center justify-center">
+                <Award className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="font-display font-bold text-sidebar-foreground">
+                  Valuable Brands
+                </h1>
+                <p className="text-xs text-sidebar-foreground/60">
+                  Admin Panel
+                </p>
+              </div>
+            </Link>
           </div>
-          <nav className="flex-1 space-y-1 p-4">
-            {adminNavItems.map((item) => (
+
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {sidebarLinks.map((link) => (
               <Link
-                key={item.path}
-                href={item.path}
+                key={link.path}
+                href={link.path}
+                onClick={() => setSidebarOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  location.pathname === item.path
+                  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+                  isActive(link.path)
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
                 )}
               >
-                <item.icon className="h-5 w-5" />
-                {item.name}
+                <link.icon className="w-5 h-5" />
+                {link.name}
               </Link>
             ))}
           </nav>
-          <div className="border-t border-sidebar-border p-4">
+
+          {/* User */}
+          <div className="p-4 border-t border-sidebar-border">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-sidebar-accent flex items-center justify-center">
+                <User className="w-5 h-5 text-sidebar-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-sidebar-foreground">
+                  Admin User
+                </p>
+                <p className="text-xs text-sidebar-foreground/60">
+                  admin@valuablebrands.co.ke
+                </p>
+              </div>
+            </div>
             <Link href="/">
               <Button
                 variant="ghost"
-                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               >
-                <LogOut className="h-5 w-5" />
+                <LogOut className="w-4 h-4 mr-2" />
                 Back to Site
               </Button>
             </Link>
@@ -81,37 +124,34 @@ export default function AdminLayout({ children }) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 lg:px-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          <div className="flex-1" />
-          <Button variant="ghost" size="icon" onClick={toggleTheme}>
-            {theme === "light" ? (
-              <Moon className="h-5 w-5" />
-            ) : (
-              <Sun className="h-5 w-5" />
-            )}
-          </Button>
-        </header>
-        <main className="flex-1 overflow-auto bg-background p-4 lg:p-6">
-          {children}
-        </main>
-      </div>
+      <div className="lg:pl-64">
+        {/* Top Bar */}
+        <header className="sticky top-0 bg-background/80 backdrop-blur-lg border-b border-border z-30">
+          <div className="flex items-center justify-between px-4 lg:px-8 h-16">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
 
-      {/* Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-foreground/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+            <div className="flex-1" />
+
+            <div className="flex items-center gap-3">
+              <button className="relative p-2 rounded-lg hover:bg-muted transition-colors">
+                <Bell className="w-5 h-5" />
+                <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
+              </button>
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="w-5 h-5 text-primary" />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="p-4 lg:p-8">{children}</main>
+      </div>
     </div>
   );
 }
