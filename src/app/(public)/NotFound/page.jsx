@@ -1,9 +1,10 @@
-import { useLocation } from "react-router-dom";
+"use client";
 import { useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const NotFound = () => {
-  const location = useLocation();
+  const location = usePathname();
 
   useEffect(() => {
     console.error(
