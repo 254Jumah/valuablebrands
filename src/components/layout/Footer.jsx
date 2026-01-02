@@ -64,6 +64,7 @@ export const Footer = () => {
                 "Blog",
                 "Gallery",
                 "Contact",
+                "Admin Login",
               ].map((item) => (
                 <li key={item}>
                   <Link

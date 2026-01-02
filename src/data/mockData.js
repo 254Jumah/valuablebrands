@@ -282,7 +282,16 @@ export const stats = {
   attendees: 25000,
   yearsExperience: 8,
 };
-
+export const dashboardStats = {
+  totalEvents: 24,
+  upcomingEvents: 6,
+  totalNominations: 156,
+  totalVotes: 4892,
+  totalBlogs: 32,
+  activeCategories: 8,
+  registeredUsers: 1247,
+  monthlyVisitors: 15600,
+};
 export const testimonials = [
   {
     id: "1",
