@@ -105,7 +105,7 @@ export const Footer = () => {
             </h4>
             <ul className="space-y-3 text-sm">
               <li className="flex items-start gap-3">
-                <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+                <MapPin className="mt-0.5 h-4 w-4 text-accent" />
                 <span className="text-primary-foreground/70">
                   Westlands Business Centre,
                   <br />
@@ -113,7 +113,7 @@ export const Footer = () => {
                 </span>
               </li>
               <li className="flex items-center gap-3">
-                <Phone className="h-4 w-4 flex-shrink-0 text-accent" />
+                <Phone className="h-4 w-4  text-accent" />
                 <a
                   href="tel:+254700123456"
                   className="text-primary-foreground/70 hover:text-accent"
@@ -122,7 +122,7 @@ export const Footer = () => {
                 </a>
               </li>
               <li className="flex items-center gap-3">
-                <Mail className="h-4 w-4 flex-shrink-0 text-accent" />
+                <Mail className="h-4 w-4  text-accent" />
                 <a
                   href="mailto:info@valuablebrands.co.ke"
                   className="text-primary-foreground/70 hover:text-accent"

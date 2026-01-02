@@ -107,7 +107,7 @@ export default function CTASection() {
               <Button
                 size="lg"
                 variant="outline"
-                className="border-2 border-white text-white hover:bg-white hover:text-primary font-semibold group"
+                className="border-2 border-white text-shadow-green-600 hover:bg-white hover:text-primary font-semibold group"
               >
                 Contact Us
                 <ArrowRight className="h-5 w-5 ml-2 transition-transform group-hover:translate-x-1" />

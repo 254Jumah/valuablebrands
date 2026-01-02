@@ -59,8 +59,8 @@ export default function HeroSection() {
           priority
           sizes="100vw"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/95 via-primary/85 to-primary/70" />
-        <div className="absolute inset-0 bg-gradient-to-t from-primary/80 via-transparent to-transparent" />
+        <div className="absolute inset-0  from-primary/95 via-primary/85 to-primary/70" />
+        <div className="absolute inset-0  from-primary/80 via-transparent to-transparent" />
       </div>
 
       {/* Animated Decorative Elements */}
@@ -70,7 +70,7 @@ export default function HeroSection() {
           opacity: [0.1, 0.2, 0.1],
         }}
         transition={{ duration: 8, repeat: Infinity }}
-        className="absolute -right-40 -top-40 h-[600px] w-[600px] rounded-full bg-accent/20 blur-3xl"
+        className="absolute -right-40 -top-40  rounded-full bg-accent/20 blur-3xl"
       />
       <motion.div
         animate={{
@@ -78,7 +78,7 @@ export default function HeroSection() {
           opacity: [0.05, 0.15, 0.05],
         }}
         transition={{ duration: 10, repeat: Infinity }}
-        className="absolute -bottom-40 -left-40 h-[500px] w-[500px] rounded-full bg-white/10 blur-3xl"
+        className="absolute -bottom-40 -left-40   rounded-full bg-white/10 blur-3xl"
       />
 
       <div className="container relative mx-auto px-4 py-32">
@@ -133,7 +133,7 @@ export default function HeroSection() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="w-full sm:w-auto border-2 border-white text-white hover:bg-white hover:text-primary px-8 py-6 text-lg"
+                  className="w-full sm:w-auto border-2 border-white text-black hover:bg-white hover:text-primary px-8 py-6 text-lg"
                 >
                   <Play className="h-5 w-5 mr-2" />
                   View Awards
