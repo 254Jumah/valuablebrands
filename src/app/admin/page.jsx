@@ -1,117 +1,126 @@
-"use client";
 import React from "react";
+import { Calendar, Trophy, FileText, Users } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
-import {
-  Award,
-  LayoutDashboard,
-  Calendar,
-  Trophy,
-  FileText,
-  Image,
-  LogOut,
-  Sun,
-  Moon,
-  Menu,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-
-import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
-import Link from "next/link";
-import { useTheme } from "@/contexts/ThemeContext";
-
-const adminNavItems = [
-  { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
-  { name: "Events", path: "/admin/events", icon: Calendar },
-  { name: "Awards", path: "/admin/awards", icon: Trophy },
-  { name: "Blog", path: "/admin/blog", icon: FileText },
-  { name: "Media", path: "/admin/media", icon: Image },
+const stats = [
+  {
+    title: "Total Events",
+    value: "24",
+    change: "+3 this month",
+    icon: Calendar,
+    color: "bg-primary",
+  },
+  {
+    title: "Nominations",
+    value: "156",
+    change: "+12 this week",
+    icon: Trophy,
+    color: "bg-accent",
+  },
+  {
+    title: "Total Votes",
+    value: "2,847",
+    change: "+234 today",
+    icon: Users,
+    color: "bg-primary",
+  },
+  {
+    title: "Blog Posts",
+    value: "48",
+    change: "+2 this week",
+    icon: FileText,
+    color: "bg-accent",
+  },
 ];
 
-export default function AdminLayout({ children }) {
-  const { theme, toggleTheme } = useTheme();
-  const location = usePathname();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+const recentActivities = [
+  {
+    action: "New nomination received",
+    category: "Best Emerging Brand",
+    time: "5 mins ago",
+  },
+  {
+    action: "Event published",
+    category: "SME Excellence Awards 2024",
+    time: "1 hour ago",
+  },
+  {
+    action: "Blog post updated",
+    category: "Digital Economy Trends",
+    time: "3 hours ago",
+  },
+  {
+    action: "50 new votes recorded",
+    category: "Innovation Award",
+    time: "6 hours ago",
+  },
+];
 
+const AdminDashboard = () => {
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform bg-sidebar transition-transform lg:relative lg:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="flex h-full flex-col">
-          <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-4">
-            <Award className="h-8 w-8 text-sidebar-primary" />
-            <span className="font-display text-lg font-bold text-sidebar-foreground">
-              Admin Panel
-            </span>
-          </div>
-          <nav className="flex-1 space-y-1 p-4">
-            {adminNavItems.map((item) => (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  location.pathname === item.path
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                )}
-              >
-                <item.icon className="h-5 w-5" />
-                {item.name}
-              </Link>
-            ))}
-          </nav>
-          <div className="border-t border-sidebar-border p-4">
-            <Link href="/">
-              <Button
-                variant="ghost"
-                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground"
-              >
-                <LogOut className="h-5 w-5" />
-                Back to Site
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 lg:px-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          <div className="flex-1" />
-          <Button variant="ghost" size="icon" onClick={toggleTheme}>
-            {theme === "light" ? (
-              <Moon className="h-5 w-5" />
-            ) : (
-              <Sun className="h-5 w-5" />
-            )}
-          </Button>
-        </header>
-        <main className="flex-1 overflow-auto bg-background p-4 lg:p-6">
-          {children}
-        </main>
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
+          Dashboard
+        </h1>
+        <p className="text-muted-foreground">
+          Welcome back! Heres whats happening.
+        </p>
       </div>
 
-      {/* Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-foreground/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {/* Stats Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat, index) => (
+          <Card key={index} className="border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {stat.title}
+              </CardTitle>
+              <div className={`rounded-lg p-2 ${stat.color}`}>
+                <stat.icon className="h-4 w-4 text-primary-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="font-display text-2xl font-bold text-foreground">
+                {stat.value}
+              </p>
+              <p className="text-xs text-muted-foreground">{stat.change}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Recent Activity */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="font-display text-lg">
+            Recent Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {recentActivities.map((activity, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between border-b border-border/50 pb-4 last:border-0 last:pb-0"
+              >
+                <div>
+                  <p className="font-medium text-foreground">
+                    {activity.action}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {activity.category}
+                  </p>
+                </div>
+                <Badge variant="secondary">{activity.time}</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
-}
+};
+
+export default AdminDashboard;
