@@ -21,7 +21,7 @@ const NotFound = () => {
           Oops! Page not found
         </p>
         <Link href="/" className="text-primary underline hover:text-primary/90">
-          Return to Home
+          Return to Home Page
         </Link>
       </div>
     </div>
