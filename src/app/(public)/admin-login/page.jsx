@@ -1,86 +1,144 @@
 "use client";
-import { useEffect, useState } from "react";
 
-import { Award, Lock, Mail, Eye, EyeOff } from "lucide-react";
+import { signIn } from "next-auth/react";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "react-toastify";
-import { usePathname } from "next/navigation";
+import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Image from "next/image";
 
-export default function AdminLogin() {
+const Login = () => {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const router = useRouter();
-  const handleSubmit = (e) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    // Login logic
-    setIsLoggedIn(true);
-    toast({
-      title: "Welcome back!",
-      description: "You have successfully logged in.",
-    });
-  };
 
-  useEffect(() => {
-    if (isLoggedIn) {
-      router.push("/admin");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      console.log("🔐 VERCEL: Attempting login for:", email);
+
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      console.log("📋 VERCEL: SignIn result:", result);
+
+      if (result?.error) {
+        console.log("❌ VERCEL: Login error:", result.error);
+        setError("Invalid email or password");
+        setIsLoading(false);
+        return;
+      }
+
+      console.log("✅ VERCEL: Login successful");
+
+      // CRITICAL FIX: Use window.location.replace() instead of href
+      // This preserves cookies better
+      window.location.replace("/dashboard");
+    } catch (err) {
+      console.error("💥 VERCEL: Login crash:", err);
+      setError("Server error. Please try again.");
+      setIsLoading(false);
     }
-  }, [isLoggedIn, router]);
+  }
 
+  // Rest of your component remains the same...
   return (
-    <div className="min-h-screen flex">
-      {/* Left Side - Form */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-md">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 gradient-gold rounded-xl flex items-center justify-center">
-              <Award className="w-7 h-7 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="font-display text-xl font-bold">
-                Valuable Brands
-              </h1>
-              <p className="text-sm text-muted-foreground">Admin Portal</p>
-            </div>
-          </div>
-
-          <h2 className="font-display text-3xl font-bold mb-2">Welcome back</h2>
-          <p className="text-muted-foreground mb-8">
-            Sign in to access your admin dashboard
+    <div className="min-h-screen flex items-center justify-center from-background via-background to-secondary/20 px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md"
+      >
+        {/* Logo & Header */}
+        <div className="text-center mb-8">
+          <Link href="/" className="inline-block">
+            <Image
+              src="/assets/kah-logo.jpg"
+              width={100}
+              height={100}
+              alt="KAH Alumni Logo"
+              className="h-20 w-20 mx-auto rounded-full object-cover border-2 border-primary mb-4"
+            />
+          </Link>
+          <h1 className="text-3xl font-serif font-bold text-foreground">
+            Welcome Back
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Sign in to access your member portal
           </p>
+        </div>
+
+        {/* Login Form */}
+        <div className="card-premium p-8">
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg"
+            >
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <p className="text-sm font-medium">{error}</p>
+              </div>
+            </motion.div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Email Address
-              </label>
+            {/* Email Field */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
+                  id="email"
                   type="email"
-                  placeholder="admin@valuablebrands.co.ke"
+                  placeholder="kahalumni@gmail.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 bg-secondary border-border"
                   required
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Password</label>
+            {/* Password Field */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError("");
+                  }}
+                  className="pl-10 pr-10 bg-secondary border-border"
                   required
                 />
                 <button
@@ -89,58 +147,64 @@ export default function AdminLogin() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="h-5 w-5" />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="h-5 w-5" />
                   )}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded border-input" />
-                <span className="text-sm">Remember me</span>
-              </label>
-              <a href="#" className="text-sm text-primary hover:underline">
-                Forgot password?
-              </a>
-            </div>
-
-            <button
+            {/* Submit Button */}
+            <Button
               type="submit"
-              className="btn w-full text-lg bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white border-none shadow-lg hover:shadow-xl transition-all duration-300"
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={isLoading}
             >
-              Sign In
-            </button>
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Signing in...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Sign In
+                </span>
+              )}
+            </Button>
           </form>
 
-          <div className="mt-8 text-center">
-            <Link
-              href="/"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              ← Back to website
-            </Link>
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                New member?
+              </span>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Right Side - Visual */}
-      <div className="hidden lg:flex flex-1 bg-foreground items-center justify-center p-12">
-        <div className="max-w-md text-center text-background">
-          <div className="w-24 h-24 gradient-gold rounded-2xl flex items-center justify-center mx-auto mb-8">
-            <Award className="w-12 h-12 text-primary-foreground" />
-          </div>
-          <h2 className="font-display text-3xl font-bold mb-4">
-            Manage Your Platform
-          </h2>
-          <p className="text-background/70">
-            Access your admin dashboard to manage events, awards, blog posts,
-            and media content for Valuable Brands Kenya.
+          {/* Contact Admin */}
+          <p className="text-center text-sm text-muted-foreground">
+            Contact your admin to get registered.{" "}
+            <Link href="/" className="text-primary hover:underline">
+              Learn more about membership
+            </Link>
           </p>
         </div>
-      </div>
+
+        {/* Back to Home */}
+        <p className="text-center mt-6 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-foreground">
+            ← Back to Home
+          </Link>
+        </p>
+      </motion.div>
     </div>
   );
-}
+};
+
+export default Login;
