@@ -1,161 +1,192 @@
-"use client";
+'use client';
+import { useEffect, useState } from 'react';
+import { signIn } from 'next-auth/react';
+import {
+  Award,
+  Lock,
+  Mail,
+  Eye,
+  EyeOff,
+  LogIn,
+  AlertCircle,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { toast } from 'react-toastify';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-import { signIn } from "next-auth/react";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import Link from "next/link";
-import Image from "next/image";
-
-const Login = () => {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function AdminLogin() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const router = useRouter();
+
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   async function handleSubmit(e) {
     e.preventDefault();
 
-    setError("");
+    setError('');
     setIsLoading(true);
 
     try {
-      console.log("🔐 VERCEL: Attempting login for:", email);
+      console.log('🔐 VERCEL: Attempting login for:', email);
 
-      const result = await signIn("credentials", {
+      const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
       });
 
-      console.log("📋 VERCEL: SignIn result:", result);
+      console.log('📋 VERCEL: SignIn result:', result);
 
       if (result?.error) {
-        console.log("❌ VERCEL: Login error:", result.error);
-        setError("Invalid email or password");
+        console.log('❌ VERCEL: Login error:', result.error);
+        setError('Invalid email or password');
         setIsLoading(false);
         return;
       }
 
-      console.log("✅ VERCEL: Login successful");
+      console.log('✅ VERCEL: Login successful');
 
       // CRITICAL FIX: Use window.location.replace() instead of href
       // This preserves cookies better
-      window.location.replace("/dashboard");
+      window.location.replace('/dashboard');
     } catch (err) {
-      console.error("💥 VERCEL: Login crash:", err);
-      setError("Server error. Please try again.");
+      console.error('💥 VERCEL: Login crash:', err);
+      setError('Server error. Please try again.');
       setIsLoading(false);
     }
   }
 
-  // Rest of your component remains the same...
   return (
-    <div className="min-h-screen flex items-center justify-center from-background via-background to-secondary/20 px-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
-      >
-        {/* Logo & Header */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
-            <Image
-              src="/assets/kah-logo.jpg"
-              width={100}
-              height={100}
-              alt="KAH Alumni Logo"
-              className="h-20 w-20 mx-auto rounded-full object-cover border-2 border-primary mb-4"
-            />
-          </Link>
-          <h1 className="text-3xl font-serif font-bold text-foreground">
-            Welcome Back
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Sign in to access your member portal
-          </p>
-        </div>
+    <div className="min-h-screen flex">
+      {/* Left Side - Form */}
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-12 h-12 gradient-gold rounded-xl flex items-center justify-center">
+              <Award className="w-7 h-7 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="font-display text-xl font-bold">
+                Valuable Brands
+              </h1>
+              <p className="text-sm text-muted-foreground">Admin Portal</p>
+            </div>
+          </div>
 
-        {/* Login Form */}
-        <div className="card-premium p-8">
+          <h2 className="font-display text-3xl font-bold mb-2">Welcome back</h2>
+          <p className="text-muted-foreground mb-8">
+            Sign in to access your admin dashboard
+          </p>
+
+          {/* Error Message Display */}
           {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg"
-            >
-              <div className="flex items-center gap-2 text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <p className="text-sm font-medium">{error}</p>
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-medium">{error}</span>
               </div>
-            </motion.div>
+            </div>
+          )}
+
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="fixed inset-0 bg-background/50 backdrop-blur-sm z-50 flex items-center justify-center">
+              <div className="bg-white p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
+                <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                <p className="text-lg font-medium">Signing you in...</p>
+                <p className="text-sm text-muted-foreground">
+                  Please wait while we authenticate your credentials
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <div
+                    className="h-2 w-2 bg-primary rounded-full animate-bounce"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <div
+                    className="h-2 w-2 bg-primary rounded-full animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <div
+                    className="h-2 w-2 bg-primary rounded-full animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
+                </div>
+              </div>
+            </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email Field */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Email Address
+              </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
-                  id="email"
                   type="email"
-                  placeholder="kahalumni@gmail.com"
+                  placeholder="admin@valuablebrands.co.ke"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-secondary border-border"
+                  className="pl-10"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
 
-            {/* Password Field */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:underline"
-                >
-                  Forgot password?
-                </Link>
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (error) setError("");
-                  }}
-                  className="pl-10 pr-10 bg-secondary border-border"
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10 pr-10"
                   required
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  disabled={isLoading}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
+                    <EyeOff className="w-5 h-5" />
                   ) : (
-                    <Eye className="h-5 w-5" />
+                    <Eye className="w-5 h-5" />
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Submit Button */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded border-input"
+                  disabled={isLoading}
+                />
+                <span className="text-sm">Remember me</span>
+              </label>
+              <a
+                href="#"
+                className="text-sm text-primary hover:underline disabled:opacity-50"
+                onClick={(e) => isLoading && e.preventDefault()}
+              >
+                Forgot password?
+              </a>
+            </div>
+
             <Button
               type="submit"
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
@@ -175,36 +206,33 @@ const Login = () => {
             </Button>
           </form>
 
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">
-                New member?
-              </span>
-            </div>
-          </div>
-
-          {/* Contact Admin */}
-          <p className="text-center text-sm text-muted-foreground">
-            Contact your admin to get registered.{" "}
-            <Link href="/" className="text-primary hover:underline">
-              Learn more about membership
+          <div className="mt-8 text-center">
+            <Link
+              href="/"
+              className="text-sm text-muted-foreground hover:text-foreground"
+              onClick={(e) => isLoading && e.preventDefault()}
+            >
+              ← Back to website
             </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Visual */}
+      <div className="hidden lg:flex flex-1 bg-foreground items-center justify-center p-12">
+        <div className="max-w-md text-center text-background">
+          <div className="w-24 h-24 gradient-gold rounded-2xl flex items-center justify-center mx-auto mb-8">
+            <Award className="w-12 h-12 text-primary-foreground" />
+          </div>
+          <h2 className="font-display text-3xl font-bold mb-4">
+            Manage Your Platform
+          </h2>
+          <p className="text-background/70">
+            Access your admin dashboard to manage events, awards, blog posts,
+            and media content for Valuable Brands Kenya.
           </p>
         </div>
-
-        {/* Back to Home */}
-        <p className="text-center mt-6 text-sm text-muted-foreground">
-          <Link href="/" className="hover:text-foreground">
-            ← Back to Home
-          </Link>
-        </p>
-      </motion.div>
+      </div>
     </div>
   );
-};
-
-export default Login;
+}
