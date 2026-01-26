@@ -1,5 +1,5 @@
 'use client';
-import { children, useState } from 'react';
+import { useState } from 'react';
 
 import {
   Award,
@@ -13,6 +13,8 @@ import {
   Bell,
   UserCircle,
   Settings,
+  Building2,
+  Banknote,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -31,12 +33,14 @@ import { usePathname } from 'next/navigation';
 const adminNavItems = [
   { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
   { name: 'Events', path: '/admin/events', icon: Calendar },
+  { name: 'Brands', path: '/admin/brands', icon: Building2 },
+  { name: 'Registrations', path: '/admin/registrations', icon: Banknote },
   { name: 'Awards', path: '/admin/awards', icon: Trophy },
   { name: 'Blog', path: '/admin/blog', icon: FileText },
   { name: 'Media', path: '/admin/media', icon: Image },
 ];
 
-export const AdminLayout = () => {
+export const AdminLayout = ({ children }) => {
   const location = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -234,7 +238,7 @@ export const AdminLayout = () => {
                   asChild
                   className="cursor-pointer justify-center"
                 >
-                  <Link to="/admin">View all</Link>
+                  <Link href="/admin">View all</Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
