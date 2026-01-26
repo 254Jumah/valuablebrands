@@ -35,6 +35,8 @@ const adminNavItems = [
   { name: 'Events', path: '/admin/events', icon: Calendar },
   { name: 'Brands', path: '/admin/brands', icon: Building2 },
   { name: 'Registrations', path: '/admin/registrations', icon: Banknote },
+  { name: 'Finance', path: '/admin/Finance', icon: Banknote },
+  { name: 'Team', path: '/admin/team', icon: Building2 },
   { name: 'Awards', path: '/admin/awards', icon: Trophy },
   { name: 'Blog', path: '/admin/blog', icon: FileText },
   { name: 'Media', path: '/admin/media', icon: Image },
