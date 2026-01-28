@@ -15,6 +15,7 @@ import {
   Settings,
   Building2,
   Banknote,
+  BarChart3,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ const adminNavItems = [
   { name: 'Brands', path: '/admin/brands', icon: Building2 },
   { name: 'Registrations', path: '/admin/registrations', icon: Banknote },
   { name: 'Finance', path: '/admin/Finance', icon: Banknote },
+  { name: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
   { name: 'Team', path: '/admin/team', icon: Building2 },
   { name: 'Awards', path: '/admin/awards', icon: Trophy },
   { name: 'Blog', path: '/admin/blog', icon: FileText },
