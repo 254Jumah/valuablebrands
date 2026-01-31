@@ -1,8 +1,5 @@
 'use client';
-import React from 'react';
-import { z } from 'zod';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import React, { useState, useEffect } from 'react';
 import {
   Building2,
   Pencil,
@@ -11,8 +8,11 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Save,
+  Loader2,
 } from 'lucide-react';
-
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -33,15 +33,6 @@ import {
   SheetClose,
 } from '@/components/ui/sheet';
 import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -49,542 +40,394 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { addBrand, fetchbrands } from '@/app/lib/action';
+import useAuth from '@/app/hooks/useAuth';
 
-export const initialBrands = [
-  {
-    id: 'b1',
-    businessName: 'Kujali Foods',
-    category: 'Food & Beverage',
-    website: 'https://example.com',
-    city: 'Nairobi',
-    country: 'Kenya',
-    status: 'Active',
-    tags: ['SME', 'Awards'],
-    notes: 'Interested in sponsoring Q2 awards gala.',
-    primaryContact: {
-      name: 'Sarah Kimani',
-      title: 'CEO',
-      email: 'sarah@kujalifoods.co.ke',
-      phone: '+254 700 000 000',
-    },
-    secondaryContact: {
-      name: 'Peter Otieno',
-      title: 'Marketing Lead',
-      email: 'peter@kujalifoods.co.ke',
-      phone: '+254 711 111 111',
-    },
-    createdAt: '2024-02-12T10:15:00.000Z',
-  },
-  {
-    id: 'b2',
-    businessName: 'Uhuru Bank',
-    category: 'Financial Services',
-    city: 'Nairobi',
-    country: 'Kenya',
-    status: 'Prospect',
-    tags: ['Corporate', 'Gala'],
-    primaryContact: {
-      name: 'Amina Hassan',
-      title: 'Marketing Director',
-      email: 'amina@uhurubank.co.ke',
-      phone: '+254 722 222 222',
-    },
-    createdAt: '2024-03-01T08:00:00.000Z',
-  },
-  {
-    id: 'b3',
-    businessName: 'Tech Solutions Ltd',
-    category: 'Technology',
-    city: 'Mombasa',
-    country: 'Kenya',
-    status: 'Active',
-    tags: ['Startup', 'Innovation'],
-    primaryContact: {
-      name: 'James Mwangi',
-      title: 'CTO',
-      email: 'james@techsolutions.co.ke',
-      phone: '+254 733 333 333',
-    },
-    createdAt: '2024-03-15T09:00:00.000Z',
-  },
-  {
-    id: 'b4',
-    businessName: 'Green Energy Corp',
-    category: 'Renewable Energy',
-    city: 'Nakuru',
-    country: 'Kenya',
-    status: 'Prospect',
-    tags: ['Green', 'Sustainability'],
-    primaryContact: {
-      name: 'Lisa Wangari',
-      title: 'Operations Director',
-      email: 'lisa@greenenergy.co.ke',
-      phone: '+254 744 444 444',
-    },
-    createdAt: '2024-03-20T11:30:00.000Z',
-  },
-  {
-    id: 'b5',
-    businessName: 'Urban Logistics',
-    category: 'Transport & Logistics',
-    city: 'Nairobi',
-    country: 'Kenya',
-    status: 'Active',
-    tags: ['Logistics', 'Delivery'],
-    primaryContact: {
-      name: 'David Omondi',
-      title: 'CEO',
-      email: 'david@urbanlogistics.co.ke',
-      phone: '+254 755 555 555',
-    },
-    createdAt: '2024-03-25T14:45:00.000Z',
-  },
-  {
-    id: 'b6',
-    businessName: 'MediCare Solutions',
-    category: 'Healthcare',
-    city: 'Kisumu',
-    country: 'Kenya',
-    status: 'Do not contact',
-    tags: ['Healthcare', 'Pharma'],
-    primaryContact: {
-      name: 'Dr. Susan Atieno',
-      title: 'Medical Director',
-      email: 'susan@medicare.co.ke',
-      phone: '+254 766 666 666',
-    },
-    createdAt: '2024-04-01T10:00:00.000Z',
-  },
-  {
-    id: 'b7',
-    businessName: 'Artisan Crafts Kenya',
-    category: 'Retail & Crafts',
-    city: 'Eldoret',
-    country: 'Kenya',
-    status: 'Active',
-    tags: ['Handmade', 'Local'],
-    primaryContact: {
-      name: 'John Kamau',
-      title: 'Owner',
-      email: 'john@artisancrafts.co.ke',
-      phone: '+254 777 777 777',
-    },
-    createdAt: '2024-04-05T08:30:00.000Z',
-  },
-  {
-    id: 'b8',
-    businessName: 'Digital Marketing Pro',
-    category: 'Marketing Agency',
-    city: 'Nairobi',
-    country: 'Kenya',
-    status: 'Prospect',
-    tags: ['Digital', 'Agency'],
-    primaryContact: {
-      name: 'Grace Wanjiku',
-      title: 'Marketing Director',
-      email: 'grace@digitalpro.co.ke',
-      phone: '+254 788 888 888',
-    },
-    createdAt: '2024-04-10T13:15:00.000Z',
-  },
-];
+// API Configuration
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
+// Status options
 const statusOptions = ['Prospect', 'Active', 'Do not contact'];
 
-const contactSchema = z.object({
-  name: z.string().trim().min(1, 'Contact name is required').max(120),
-  title: z.string().trim().max(120).optional().or(z.literal('')),
-  email: z.string().trim().email('Invalid email').max(255),
-  phone: z.string().trim().min(5, 'Phone is required').max(40),
-});
+// ============================================================================
+// DATA MODELS AND UTILITIES
+// ============================================================================
 
-const brandSchema = z.object({
-  businessName: z.string().trim().min(2, 'Business name is required').max(160),
-  category: z.string().trim().min(2, 'Category is required').max(120),
-  website: z
-    .string()
-    .trim()
-    .url('Invalid website URL')
-    .max(255)
-    .optional()
-    .or(z.literal('')),
-  address: z.string().trim().max(255).optional().or(z.literal('')),
-  city: z.string().trim().max(120).optional().or(z.literal('')),
-  country: z.string().trim().max(120).optional().or(z.literal('')),
-  status: z.enum(['Prospect', 'Active', 'Do not contact']),
-  tagsCsv: z.string().trim().max(300).optional().or(z.literal('')),
-  notes: z.string().trim().max(1000).optional().or(z.literal('')),
-  primaryContact: contactSchema,
-  secondaryContactEnabled: z.boolean().default(false),
-  secondaryContact: contactSchema.partial().optional(),
-});
+// Brand data model
+const initialBrandForm = {
+  // Business Details
+  businessName: '',
+  category: '',
+  website: '',
+  address: '',
+  city: '',
+  country: '',
+  status: 'Prospect',
+  tags: '',
+  notes: '',
 
-function toTags(csv) {
-  if (!csv) return [];
-  return csv
+  // Primary Contact (Required)
+  primaryContactName: '',
+  primaryContactTitle: '',
+  primaryContactEmail: '',
+  primaryContactPhone: '',
+
+  // Secondary Contact (Optional)
+  secondaryContactEnabled: false,
+  secondaryContactName: '',
+  secondaryContactTitle: '',
+  secondaryContactEmail: '',
+  secondaryContactPhone: '',
+};
+
+// Helper to convert tags string to array
+const parseTags = (tagsString) => {
+  if (!tagsString) return [];
+  return tagsString
     .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-}
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+};
 
-function statusBadgeVariant(status) {
+// Helper for status badge styling
+const getStatusBadgeClass = (status) => {
   switch (status) {
     case 'Active':
-      return 'default';
+      return 'bg-green-100 text-green-800 hover:bg-green-100 border-green-200';
     case 'Prospect':
-      return 'secondary';
+      return 'bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200';
     case 'Do not contact':
-      return 'outline';
+      return 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200';
     default:
-      return 'secondary';
+      return 'bg-gray-100 text-gray-800 hover:bg-gray-100 border-gray-200';
   }
-}
+};
 
-function emptyFormValues() {
-  return {
-    businessName: '',
-    category: '',
-    website: '',
-    address: '',
-    city: '',
-    country: '',
-    status: 'Prospect',
-    tagsCsv: '',
-    notes: '',
-    primaryContact: {
-      name: '',
-      title: '',
-      email: '',
-      phone: '',
-    },
-    secondaryContactEnabled: false,
-    secondaryContact: {
-      name: '',
-      title: '',
-      email: '',
-      phone: '',
-    },
-  };
-}
+// ============================================================================
+// API SERVICE - SIMPLIFIED
+// ============================================================================
 
-function brandToFormValues(brand) {
-  return {
-    businessName: brand.businessName,
-    category: brand.category,
-    website: brand.website ?? '',
-    address: brand.address ?? '',
-    city: brand.city ?? '',
-    country: brand.country ?? '',
-    status: brand.status,
-    tagsCsv: brand.tags.join(', '),
-    notes: brand.notes ?? '',
-    primaryContact: {
-      name: brand.primaryContact.name,
-      title: brand.primaryContact.title ?? '',
-      email: brand.primaryContact.email,
-      phone: brand.primaryContact.phone,
-    },
-    secondaryContactEnabled: !!brand.secondaryContact,
-    secondaryContact: {
-      name: brand.secondaryContact?.name ?? '',
-      title: brand.secondaryContact?.title ?? '',
-      email: brand.secondaryContact?.email ?? '',
-      phone: brand.secondaryContact?.phone ?? '',
-    },
-  };
-}
+// ============================================================================
+// SKELETON COMPONENTS
+// ============================================================================
 
-// Function to prepare data for backend
-function prepareDataForBackend(values, editingId) {
-  const tags = toTags(values.tagsCsv);
-  const secondaryEnabled = values.secondaryContactEnabled;
-  const secondary = secondaryEnabled
-    ? {
-        name: (values.secondaryContact?.name ?? '').trim(),
-        title: (values.secondaryContact?.title ?? '') || undefined,
-        email: (values.secondaryContact?.email ?? '').trim(),
-        phone: (values.secondaryContact?.phone ?? '').trim(),
-      }
-    : undefined;
-
-  const backendData = {
-    // Common fields for both create and update
-    businessName: values.businessName,
-    category: values.category,
-    website: values.website || null,
-    address: values.address || null,
-    city: values.city || null,
-    country: values.country || null,
-    status: values.status,
-    tags: tags,
-    notes: values.notes || null,
-    primaryContact: {
-      name: values.primaryContact.name,
-      title: values.primaryContact.title || null,
-      email: values.primaryContact.email,
-      phone: values.primaryContact.phone,
-    },
-    secondaryContact:
-      secondary?.email && secondary?.phone && secondary?.name
-        ? secondary
-        : null,
-  };
-
-  // Add operation type for the backend
-  if (editingId) {
-    backendData.id = editingId;
-    backendData.operation = 'update';
-  } else {
-    backendData.operation = 'create';
-  }
-
-  return backendData;
-}
-
-// Skeleton loading component for table
 function TableSkeleton() {
   return (
     <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
+      {[1, 2, 3, 4, 5].map((i) => (
         <div
           key={i}
           className="flex items-center space-x-3 p-3 border rounded-lg"
         >
-          <div className="h-10 w-10 rounded-lg bg-muted animate-pulse flex-shrink-0" />
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="h-4 w-32 bg-muted rounded animate-pulse" />
-            <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+          <div className="h-10 w-10 rounded-lg bg-gray-200 animate-pulse" />
+          <div className="space-y-2 flex-1">
+            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
           </div>
-          <div className="h-6 w-20 bg-muted rounded animate-pulse flex-shrink-0" />
-          <div className="h-4 w-24 bg-muted rounded animate-pulse hidden md:block flex-shrink-0" />
-          <div className="space-y-1 flex-1 min-w-0 hidden sm:block">
-            <div className="h-4 w-28 bg-muted rounded animate-pulse" />
-            <div className="h-3 w-32 bg-muted rounded animate-pulse" />
+          <div className="h-6 w-20 bg-gray-200 rounded animate-pulse" />
+          <div className="h-4 w-24 bg-gray-200 rounded animate-pulse hidden md:block" />
+          <div className="space-y-1 flex-1 hidden sm:block">
+            <div className="h-4 w-28 bg-gray-200 rounded animate-pulse" />
+            <div className="h-3 w-32 bg-gray-200 rounded animate-pulse" />
           </div>
-          <div className="h-8 w-16 bg-muted rounded animate-pulse flex-shrink-0" />
+          <div className="h-8 w-16 bg-gray-200 rounded animate-pulse" />
         </div>
       ))}
     </div>
   );
 }
 
-// Mobile-friendly form skeleton
-function FormSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="space-y-4">
-        <div className="h-4 w-32 bg-muted rounded animate-pulse" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
-            <div className="h-10 w-full bg-muted rounded animate-pulse" />
-          </div>
-          <div className="space-y-2">
-            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
-            <div className="h-10 w-full bg-muted rounded animate-pulse" />
-          </div>
-        </div>
-      </div>
-      <div className="space-y-4">
-        <div className="h-4 w-32 bg-muted rounded animate-pulse" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
-            <div className="h-10 w-full bg-muted rounded animate-pulse" />
-          </div>
-          <div className="space-y-2">
-            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
-            <div className="h-10 w-full bg-muted rounded animate-pulse" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 export default function AdminBrands() {
-  const [brands, setBrands] = React.useState(() => initialBrands);
-  const [query, setQuery] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('All');
-  const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [editingId, setEditingId] = React.useState(null);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [currentPage, setCurrentPage] = React.useState(1);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const { email, name, role, id } = useAuth();
+  const [brands, setBrands] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Search and Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+
+  // Form State
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formData, setFormData] = useState(initialBrandForm);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [editingBrandId, setEditingBrandId] = useState(null);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  const form = useForm({
-    resolver: zodResolver(brandSchema),
-    defaultValues: emptyFormValues(),
-    mode: 'onBlur',
-  });
+  // ============================================================================
+  // DATA FETCHING
+  // ============================================================================
 
-  // Simulate loading
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
+  // ============================================================================
+  // FORM HANDLERS - SIMPLIFIED
+  // ============================================================================
 
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return brands
-      .filter((b) =>
-        statusFilter === 'All' ? true : b.status === statusFilter
-      )
-      .filter((b) => {
-        if (!q) return true;
-        const haystack = [
-          b.businessName,
-          b.category,
-          b.primaryContact.name,
-          b.primaryContact.email,
-          b.primaryContact.phone,
-          b.tags.join(' '),
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(q);
-      });
-  }, [brands, query, statusFilter]);
-
-  // Pagination logic
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginatedBrands = React.useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(startIndex, startIndex + itemsPerPage);
-  }, [filtered, currentPage, itemsPerPage]);
-
-  const openCreate = () => {
-    setEditingId(null);
-    form.reset(emptyFormValues());
-    setSheetOpen(true);
+  const openCreateForm = () => {
+    setFormData(initialBrandForm);
+    setEditingBrandId(null);
+    setFormError('');
+    setIsFormOpen(true);
   };
 
-  const openEdit = (brand) => {
-    setEditingId(brand.id);
-    form.reset(brandToFormValues(brand));
-    setSheetOpen(true);
+  const openEditForm = (brand) => {
+    console.log('✏️ EDITING BRAND:', brand);
+
+    setFormData({
+      businessName: brand.businessName || '',
+      category: brand.category || '',
+      website: brand.website || '',
+      address: brand.address || '',
+      city: brand.city || '',
+      country: brand.country || '',
+      status: brand.status || 'Prospect',
+      tags: (brand.tags || []).join(', ') || '',
+      notes: brand.notes || '',
+
+      primaryContactName: brand.primaryContact?.name || '',
+      primaryContactTitle: brand.primaryContact?.title || '',
+      primaryContactEmail: brand.primaryContact?.email || '',
+      primaryContactPhone: brand.primaryContact?.phone || '',
+
+      secondaryContactEnabled: !!brand.secondaryContact,
+      secondaryContactName: brand.secondaryContact?.name || '',
+      secondaryContactTitle: brand.secondaryContact?.title || '',
+      secondaryContactEmail: brand.secondaryContact?.email || '',
+      secondaryContactPhone: brand.secondaryContact?.phone || '',
+    });
+
+    setEditingBrandId(brand.id);
+    setFormError('');
+    setIsFormOpen(true);
   };
 
-  const onSubmit = async (values) => {
+  const handleInputChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const toggleSecondaryContact = () => {
+    setFormData((prev) => ({
+      ...prev,
+      secondaryContactEnabled: !prev.secondaryContactEnabled,
+    }));
+  };
+
+  // ============================================================================
+  // VALIDATION AND SUBMISSION
+  // ============================================================================
+
+  const validateForm = () => {
+    console.log('🔍 VALIDATING FORM DATA...');
+    console.log('Form data:', formData);
+
+    // Required fields validation
+    if (!formData.businessName.trim()) {
+      setFormError('Business name is required');
+      return false;
+    }
+
+    if (!formData.category.trim()) {
+      setFormError('Category is required');
+      return false;
+    }
+
+    if (!formData.primaryContactName.trim()) {
+      setFormError('Primary contact name is required');
+      return false;
+    }
+
+    if (!formData.primaryContactEmail.trim()) {
+      setFormError('Primary contact email is required');
+      return false;
+    }
+
+    if (!formData.primaryContactPhone.trim()) {
+      setFormError('Primary contact phone is required');
+      return false;
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.primaryContactEmail)) {
+      setFormError('Primary contact email is invalid');
+      return false;
+    }
+
+    // If secondary contact is enabled, validate its fields
+    if (formData.secondaryContactEnabled) {
+      if (
+        !formData.secondaryContactName.trim() ||
+        !formData.secondaryContactEmail.trim() ||
+        !formData.secondaryContactPhone.trim()
+      ) {
+        setFormError('Secondary contact requires name, email, and phone');
+        return false;
+      }
+
+      if (!emailRegex.test(formData.secondaryContactEmail)) {
+        setFormError('Secondary contact email is invalid');
+        return false;
+      }
+    }
+
+    console.log('✅ FORM VALIDATION PASSED');
+    setFormError('');
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    console.log('🟡 SUBMIT BUTTON CLICKED');
+
+    if (!validateForm()) {
+      console.log('❌ FORM VALIDATION FAILED');
+      return;
+    }
+
     setIsSubmitting(true);
+    setFormError('');
 
-    // Prepare data for backend
-    const backendData = prepareDataForBackend(values, editingId);
-
-    // Console log the data being sent to backend
-    console.log('📤 Sending to backend:', JSON.stringify(backendData, null, 2));
-
-    // Also log in a more readable format for debugging
-    console.group('🚀 Form Submission Data');
-    console.log('Operation:', backendData.operation);
-    console.log('Business Name:', backendData.businessName);
-    console.log('Category:', backendData.category);
-    console.log('Status:', backendData.status);
-    console.log('Primary Contact:', backendData.primaryContact);
-    console.log('Secondary Contact:', backendData.secondaryContact);
-    console.log('Tags:', backendData.tags);
-    console.log('Notes length:', backendData.notes?.length || 0, 'characters');
-    console.groupEnd();
-
-    // Simulate API call
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      console.log('🔄 STARTING SUBMISSION PROCESS...');
 
-      const tags = toTags(values.tagsCsv);
-      const now = new Date().toISOString();
-      const secondaryEnabled = values.secondaryContactEnabled;
-      const secondary = secondaryEnabled
-        ? {
-            name: (values.secondaryContact?.name ?? '').trim(),
-            title: (values.secondaryContact?.title ?? '') || undefined,
-            email: (values.secondaryContact?.email ?? '').trim(),
-            phone: (values.secondaryContact?.phone ?? '').trim(),
+      // Prepare brand data
+      const brandData = {
+        businessName: formData.businessName,
+        category: formData.category,
+        website: formData.website || undefined,
+        address: formData.address || undefined,
+        city: formData.city || undefined,
+        country: formData.country || undefined,
+        status: formData.status,
+        tags: parseTags(formData.tags),
+        notes: formData.notes || undefined,
+        primaryContact: {
+          name: formData.primaryContactName,
+          title: formData.primaryContactTitle || undefined,
+          email: formData.primaryContactEmail,
+          phone: formData.primaryContactPhone,
+        },
+        secondaryContact: formData.secondaryContactEnabled
+          ? {
+              name: formData.secondaryContactName,
+              title: formData.secondaryContactTitle || undefined,
+              email: formData.secondaryContactEmail,
+              phone: formData.secondaryContactPhone,
+            }
+          : undefined,
+      };
+
+      if (editingBrandId) {
+        // Update existing brand
+        console.log(`🔄 UPDATING BRAND ID: ${editingBrandId}`);
+
+        // Call your update API
+        const response = await fetch(
+          `${API_BASE_URL}/brands/${editingBrandId}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(brandData),
           }
-        : undefined;
+        );
 
-      if (editingId) {
+        if (!response.ok) {
+          throw new Error('Failed to update brand');
+        }
+
+        const updatedBrand = await response.json();
+
+        // Update local state
         setBrands((prev) =>
-          prev.map((b) =>
-            b.id === editingId
-              ? {
-                  ...b,
-                  businessName: values.businessName,
-                  category: values.category,
-                  website: values.website || undefined,
-                  address: values.address || undefined,
-                  city: values.city || undefined,
-                  country: values.country || undefined,
-                  status: values.status,
-                  tags,
-                  notes: values.notes || undefined,
-                  primaryContact: {
-                    name: values.primaryContact.name,
-                    title: values.primaryContact.title || undefined,
-                    email: values.primaryContact.email,
-                    phone: values.primaryContact.phone,
-                  },
-                  secondaryContact:
-                    secondary?.email && secondary?.phone && secondary?.name
-                      ? secondary
-                      : undefined,
-                }
-              : b
+          prev.map((brand) =>
+            brand.id === editingBrandId ? updatedBrand : brand
           )
         );
-        console.log('✅ Brand updated successfully:', values.businessName);
+
+        toast.success('Brand updated successfully!');
+        console.log('✅ BRAND UPDATED');
       } else {
-        const newBrand = {
-          id: `b_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-          businessName: values.businessName,
-          category: values.category,
-          website: values.website || undefined,
-          address: values.address || undefined,
-          city: values.city || undefined,
-          country: values.country || undefined,
-          status: values.status,
-          tags,
-          notes: values.notes || undefined,
-          primaryContact: {
-            name: values.primaryContact.name,
-            title: values.primaryContact.title || undefined,
-            email: values.primaryContact.email,
-            phone: values.primaryContact.phone,
-          },
-          secondaryContact:
-            secondary?.email && secondary?.phone && secondary?.name
-              ? secondary
-              : undefined,
-          createdAt: now,
-        };
+        // Create new brand
+        console.log('🆕 CREATING NEW BRAND...');
+
+        // Call your addBrand function from actions
+        const newBrand = await addBrand(brandData);
+
+        if (!newBrand) {
+          throw new Error('Failed to create brand');
+        }
+
+        // Add to local state
         setBrands((prev) => [newBrand, ...prev]);
-        console.log('✅ Brand created successfully:', values.businessName);
+
+        toast.success('Brand created successfully!');
+        console.log('✅ NEW BRAND CREATED');
       }
-    } catch (error) {
-      console.error('❌ Error submitting form:', error);
+
+      // Close form and reset
+      setIsFormOpen(false);
+      setFormData(initialBrandForm);
+      setEditingBrandId(null);
+
+      console.log('🏁 SUBMISSION COMPLETED SUCCESSFULLY');
+    } catch (err) {
+      console.error('❌ SUBMISSION ERROR:', err);
+      setFormError(`Failed to save: ${err.message}`);
+      toast.error(err.message);
     } finally {
       setIsSubmitting(false);
-      setSheetOpen(false);
+      console.log('🟢 SUBMISSION PROCESS ENDED');
     }
   };
+  // ============================================================================
+  // FILTERING AND PAGINATION
+  // ============================================================================
 
-  const secondaryEnabled = form.watch('secondaryContactEnabled');
-
-  // Pagination handlers
-  const nextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
+  const filteredBrands = brands.filter((brand) => {
+    // Status filter
+    if (statusFilter !== 'All' && brand.status !== statusFilter) {
+      return false;
     }
-  };
 
-  const prevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const searchable = [
+        brand.businessName,
+        brand.category,
+        brand.primaryContact?.name,
+        brand.primaryContact?.email,
+        brand.primaryContact?.phone,
+        (brand.tags || []).join(' '),
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchable.includes(query);
     }
-  };
+
+    return true;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredBrands.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedBrands = filteredBrands.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
 
   const goToPage = (page) => {
     if (page >= 1 && page <= totalPages) {
@@ -592,266 +435,227 @@ export default function AdminBrands() {
     }
   };
 
-  // Reset page when filter changes
-  React.useEffect(() => {
+  // Reset page on filter change
+  useEffect(() => {
     setCurrentPage(1);
-  }, [query, statusFilter]);
+  }, [searchQuery, statusFilter]);
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+  const getbrandsData = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchbrands();
+
+      setBrands(data || []);
+
+      // Transform data for display
+    } catch (error) {
+      console.error('Failed to fetch analytics data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    getbrandsData();
+  }, []);
   return (
     <div className="space-y-6">
+      {/* Header */}
+      <ToastContainer position="top-right" autoClose={3000} />
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
-            Brands
-          </h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl font-bold lg:text-3xl">Brands</h1>
+          <p className="text-gray-600">
             Register businesses and keep contact details ready for events.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="hero"
-            onClick={openCreate}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300"
-            size="default"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Register Brand</span>
-            <span className="sm:hidden">Add Brand</span>
-          </Button>
-        </div>
+        <Button
+          onClick={openCreateForm}
+          className="bg-linear-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Register Brand
+        </Button>
       </header>
 
-      <section className="rounded-xl border border-border bg-card p-4">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">{error}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={getbrandsData}
+            className="mt-2 border-red-200 text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Search and Filter */}
+      <section className="rounded-xl border bg-white p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="relative w-full md:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search business, category, contact, tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search brands..."
               className="pl-9"
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v)}
-            >
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All statuses</SelectItem>
-                {statusOptions.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Statuses</SelectItem>
+              {statusOptions.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          {isLoading ? (
+        {/* Brands Table */}
+        <div className="mt-4">
+          {loading ? (
             <TableSkeleton />
+          ) : filteredBrands.length === 0 ? (
+            <div className="text-center py-10">
+              <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-600">No brands found</p>
+              <Button
+                variant="outline"
+                onClick={openCreateForm}
+                className="mt-3"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add First Brand
+              </Button>
+            </div>
           ) : (
             <>
-              <div className="min-w-full">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[180px]">Business</TableHead>
-                      <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[120px] hidden md:table-cell">
-                        Category
-                      </TableHead>
-                      <TableHead className="min-w-[160px]">
-                        Primary contact
-                      </TableHead>
-                      <TableHead className="min-w-[120px] hidden lg:table-cell">
-                        Tags
-                      </TableHead>
-                      <TableHead className="text-right min-w-[90px]">
-                        Action
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedBrands.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={6}
-                          className="py-10 text-center text-sm text-muted-foreground"
-                        >
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <Building2 className="h-8 w-8 text-muted-foreground" />
-                            <p>No brands found. Try a different search.</p>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={openCreate}
-                              className="mt-2"
-                            >
-                              <Plus className="mr-2 h-3 w-3" />
-                              Add your first brand
-                            </Button>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Business</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Category
+                    </TableHead>
+                    <TableHead>Primary Contact</TableHead>
+                    <TableHead className="hidden lg:table-cell">Tags</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedBrands.map((brand) => (
+                    <TableRow key={brand._id} className="hover:bg-gray-50">
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-linear-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+                            <Building2 className="h-5 w-5 text-blue-600" />
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      paginatedBrands.map((b) => (
-                        <TableRow
-                          key={b.id}
-                          className="hover:bg-muted/50 transition-colors"
+                          <div>
+                            <div className="font-medium">
+                              {brand?.businessName}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {[brand?.city, brand?.country]
+                                .filter(Boolean)
+                                .join(', ') || '—'}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            'font-medium',
+                            getStatusBadgeClass(brand.status)
+                          )}
                         >
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-purple-50 shadow-sm">
-                                <Building2 className="h-5 w-5 text-blue-600" />
-                              </div>
-                              <div className="min-w-0">
-                                <div
-                                  className="font-medium text-foreground truncate"
-                                  title={b.businessName}
-                                >
-                                  {b.businessName}
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {b.city || b.country
-                                    ? [b.city, b.country]
-                                        .filter(Boolean)
-                                        .join(', ')
-                                    : '—'}
-                                </div>
-                              </div>
+                          {brand.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {brand?.category}
+                      </TableCell>
+                      <TableCell>
+                        {brand?.primaryContact && (
+                          <div>
+                            <div className="font-medium">
+                              {brand?.primaryContact?.name}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={statusBadgeVariant(b.status)}
-                              className={cn(
-                                'font-medium text-xs',
-                                b.status === 'Active' &&
-                                  'bg-green-100 text-green-800 hover:bg-green-100 border-green-200',
-                                b.status === 'Prospect' &&
-                                  'bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200',
-                                b.status === 'Do not contact' &&
-                                  'bg-red-100 text-red-800 hover:bg-red-100 border-red-200'
-                              )}
-                            >
-                              {b.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
+                            <div className="text-sm text-gray-600">
+                              {brand?.primaryContact?.email}
+                            </div>
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {(brand?.tags || []).slice(0, 3).map((tag) => (
                             <span
-                              className="text-sm text-foreground"
-                              title={b.category}
+                              key={tag}
+                              className="rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700"
                             >
-                              {b.category}
+                              {tag}
                             </span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-0.5">
-                              <div
-                                className="text-sm font-medium text-foreground truncate"
-                                title={b.primaryContact.name}
-                              >
-                                {b.primaryContact.name}
-                              </div>
-                              <div
-                                className="text-xs text-muted-foreground truncate"
-                                title={b.primaryContact.email}
-                              >
-                                {b.primaryContact.email}
-                              </div>
-                              <div
-                                className="text-xs text-muted-foreground truncate"
-                                title={b.primaryContact.phone}
-                              >
-                                {b.primaryContact.phone}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <div className="flex flex-wrap gap-1">
-                              {b.tags.length === 0 ? (
-                                <span className="text-xs text-muted-foreground">
-                                  —
-                                </span>
-                              ) : (
-                                b.tags.slice(0, 3).map((t) => (
-                                  <span
-                                    key={t}
-                                    className="rounded-md bg-gradient-to-r from-blue-50 to-purple-50 px-2 py-0.5 text-xs text-blue-700 border border-blue-100 truncate max-w-[100px]"
-                                    title={t}
-                                  >
-                                    {t}
-                                  </span>
-                                ))
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openEdit(b)}
-                              className="border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800 shadow-sm"
-                            >
-                              <Pencil className="h-4 w-4 sm:mr-2" />
-                              <span className="hidden sm:inline">Edit</span>
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditForm(brand)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          <span className="hidden sm:inline ml-2">Edit</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
 
-              {/* Pagination Controls */}
-              {filtered.length > itemsPerPage && (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border px-2 sm:px-4 py-3 mt-4">
-                  <div className="text-sm text-muted-foreground">
-                    Showing{' '}
-                    <span className="font-medium">
-                      {(currentPage - 1) * itemsPerPage + 1}
-                    </span>{' '}
-                    to{' '}
-                    <span className="font-medium">
-                      {Math.min(currentPage * itemsPerPage, filtered.length)}
-                    </span>{' '}
-                    of <span className="font-medium">{filtered.length}</span>{' '}
-                    results
+              {/* Pagination */}
+              {filteredBrands.length > itemsPerPage && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t px-4 py-3 mt-4">
+                  <div className="text-sm text-gray-600">
+                    Showing {startIndex + 1} to{' '}
+                    {Math.min(startIndex + itemsPerPage, filteredBrands.length)}{' '}
+                    of {filteredBrands.length}
                   </div>
-                  <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={prevPage}
+                      onClick={() => goToPage(currentPage - 1)}
                       disabled={currentPage === 1}
-                      className="h-8 px-2 sm:px-3 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      <span className="hidden sm:inline ml-1">Previous</span>
                     </Button>
-                    <div className="flex items-center gap-1">
+                    <div className="flex gap-1">
                       {Array.from(
                         { length: Math.min(5, totalPages) },
                         (_, i) => {
                           let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
+                          if (totalPages <= 5) pageNum = i + 1;
+                          else if (currentPage <= 3) pageNum = i + 1;
+                          else if (currentPage >= totalPages - 2)
                             pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
+                          else pageNum = currentPage - 2 + i;
 
                           return (
                             <Button
@@ -862,10 +666,8 @@ export default function AdminBrands() {
                               size="sm"
                               onClick={() => goToPage(pageNum)}
                               className={cn(
-                                'h-8 w-8 p-0 sm:p-2',
-                                currentPage === pageNum
-                                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-sm'
-                                  : 'border-blue-200 hover:bg-blue-50'
+                                currentPage === pageNum &&
+                                  'bg-linear-to-r from-blue-600 to-purple-600 text-white'
                               )}
                             >
                               {pageNum}
@@ -877,11 +679,9 @@ export default function AdminBrands() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={nextPage}
+                      onClick={() => goToPage(currentPage + 1)}
                       disabled={currentPage === totalPages}
-                      className="h-8 px-2 sm:px-3 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                     >
-                      <span className="hidden sm:inline mr-1">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
@@ -892,510 +692,388 @@ export default function AdminBrands() {
         </div>
       </section>
 
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      {/* Brand Form Sheet */}
+      <Sheet open={isFormOpen} onOpenChange={setIsFormOpen}>
         <SheetContent
           side="right"
-          className="w-full sm:max-w-md md:max-w-lg lg:max-w-xl p-0 sm:p-0 h-full flex flex-col"
+          className="w-full sm:max-w-xl h-full flex flex-col p-0"
         >
-          {/* Fixed Header */}
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background px-4 py-3 sm:px-6 sm:py-4">
-            <div className="min-w-0">
-              <SheetTitle className="text-lg font-semibold truncate">
-                {editingId ? 'Edit Brand' : 'Register Brand'}
-              </SheetTitle>
-              <SheetDescription className="text-sm text-muted-foreground mt-1 truncate">
-                Save business details and contacts for upcoming events.
-              </SheetDescription>
+          {/* Header */}
+          <div className="sticky top-0 z-10 border-b bg-white px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <SheetTitle>
+                  {editingBrandId ? 'Edit Brand' : 'Register New Brand'}
+                </SheetTitle>
+                <SheetDescription>
+                  {editingBrandId
+                    ? 'Update brand details'
+                    : 'Add a new business and contact information'}
+                </SheetDescription>
+              </div>
+              <SheetClose asChild>
+                <Button variant="ghost" size="icon">
+                  <X className="h-4 w-4" />
+                </Button>
+              </SheetClose>
             </div>
-            <SheetClose asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full hover:bg-muted flex-shrink-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </SheetClose>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-            {isSubmitting ? (
-              <FormSkeleton />
-            ) : (
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-6"
-                >
-                  {/* Business Details Section */}
-                  <div className="space-y-4">
-                    <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <span className="h-5 w-5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 flex items-center justify-center text-xs">
-                        1
-                      </span>
-                      Business details
-                    </h2>
+          {/* Form Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            {formError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-red-800 font-medium">{formError}</p>
+              </div>
+            )}
 
-                    <div className="grid gap-4">
-                      <FormField
-                        control={form.control}
-                        name="businessName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              Business name{' '}
-                              <span className="text-red-500">*</span>
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="e.g., Valuable Brands Ltd"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              Category <span className="text-red-500">*</span>
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="e.g., Financial Services"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="website"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Website</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="https://"
-                                inputMode="url"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                              Optional
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="status"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              Status <span className="text-red-500">*</span>
-                            </FormLabel>
-                            <Select
-                              value={field.value}
-                              onValueChange={field.onChange}
-                            >
-                              <FormControl>
-                                <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {statusOptions.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="address"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Address</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Street / Building / P.O. Box"
-                              {...field}
-                              className="w-full"
-                            />
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            Optional
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Nairobi"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="country"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Country</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Kenya"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="tagsCsv"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Tags</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Sponsor, SME, Gala"
-                              {...field}
-                              className="w-full"
-                            />
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            Comma-separated. Used for quick searching.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="notes"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Notes</FormLabel>
-                          <FormControl>
-                            <textarea
-                              className={cn(
-                                'min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none'
-                              )}
-                              placeholder="Anything important about this brand (preferences, past events, constraints...)"
-                              {...field}
-                              rows={4}
-                            />
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            Optional
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+            {/* Business Details Section */}
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-lg font-semibold mb-4">Business Details</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Business Name *
+                    </label>
+                    <Input
+                      value={formData.businessName}
+                      onChange={(e) =>
+                        handleInputChange('businessName', e.target.value)
+                      }
+                      placeholder="Enter business name"
+                      className="w-full"
                     />
                   </div>
 
-                  {/* Primary Contact Section */}
-                  <div className="space-y-4">
-                    <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <span className="h-5 w-5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 flex items-center justify-center text-xs">
-                        2
-                      </span>
-                      Primary contact <span className="text-red-500">*</span>
-                    </h2>
-                    <div className="grid gap-4">
-                      <FormField
-                        control={form.control}
-                        name="primaryContact.name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Name</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Full name"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="primaryContact.title"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Role / Title</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Marketing Manager"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                              Optional
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Category *
+                      </label>
+                      <Input
+                        value={formData.category}
+                        onChange={(e) =>
+                          handleInputChange('category', e.target.value)
+                        }
+                        placeholder="e.g., Technology, Retail"
+                        className="w-full"
                       />
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="primaryContact.email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="name@company.com"
-                                inputMode="email"
-                                autoComplete="email"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="primaryContact.phone"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="+254 ..."
-                                inputMode="tel"
-                                autoComplete="tel"
-                                {...field}
-                                className="w-full"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Secondary Contact Section */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                        <span className="h-5 w-5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 flex items-center justify-center text-xs">
-                          3
-                        </span>
-                        Secondary contact
-                      </h2>
-                      <button
-                        type="button"
-                        className={cn(
-                          'text-sm font-medium px-3 py-1 rounded-md transition-colors',
-                          secondaryEnabled
-                            ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                            : 'text-muted-foreground bg-gray-50 hover:bg-gray-100'
-                        )}
-                        onClick={() =>
-                          form.setValue(
-                            'secondaryContactEnabled',
-                            !secondaryEnabled
-                          )
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Status *
+                      </label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value) =>
+                          handleInputChange('status', value)
                         }
                       >
-                        {secondaryEnabled ? 'Remove' : 'Add'}
-                      </button>
-                    </div>
-
-                    {secondaryEnabled ? (
-                      <div className="rounded-lg border border-blue-100 bg-blue-50/30 p-4 space-y-4">
-                        <div className="grid gap-4">
-                          <FormField
-                            control={form.control}
-                            name="secondaryContact.name"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Name</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder="Full name"
-                                    {...field}
-                                    className="w-full"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="secondaryContact.title"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Role / Title</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder="Finance / Procurement"
-                                    {...field}
-                                    className="w-full"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <FormField
-                            control={form.control}
-                            name="secondaryContact.email"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Email</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder="name@company.com"
-                                    inputMode="email"
-                                    {...field}
-                                    className="w-full"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="secondaryContact.phone"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Phone</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder="+254 ..."
-                                    inputMode="tel"
-                                    {...field}
-                                    className="w-full"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground pt-2 border-t border-blue-100">
-                          <span className="font-medium">Tip:</span> Fill at
-                          least name, email and phone if you want it saved.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center">
-                        <p className="text-sm text-muted-foreground">
-                          Add a secondary contact for backup communication
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Form Actions */}
-                  <div className="sticky bottom-0 bg-background pt-4 border-t border-border">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setSheetOpen(false)}
-                        className="border-gray-300 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        variant="default"
-                        disabled={isSubmitting}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-all duration-300 min-w-[120px]"
-                      >
-                        {isSubmitting ? (
-                          <span className="flex items-center gap-2">
-                            <svg
-                              className="animate-spin h-4 w-4 text-white"
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                            >
-                              <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                              ></circle>
-                              <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                              ></path>
-                            </svg>
-                            Saving...
-                          </span>
-                        ) : (
-                          <span>
-                            {editingId ? 'Save changes' : 'Save brand'}
-                          </span>
-                        )}
-                      </Button>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                </form>
-              </Form>
-            )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Website
+                      </label>
+                      <Input
+                        value={formData.website}
+                        onChange={(e) =>
+                          handleInputChange('website', e.target.value)
+                        }
+                        placeholder="https://example.com"
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Tags
+                      </label>
+                      <Input
+                        value={formData.tags}
+                        onChange={(e) =>
+                          handleInputChange('tags', e.target.value)
+                        }
+                        placeholder="Separate with commas"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        City
+                      </label>
+                      <Input
+                        value={formData.city}
+                        onChange={(e) =>
+                          handleInputChange('city', e.target.value)
+                        }
+                        placeholder="City"
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Country
+                      </label>
+                      <Input
+                        value={formData.country}
+                        onChange={(e) =>
+                          handleInputChange('country', e.target.value)
+                        }
+                        placeholder="Country"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-medium mb-1">
+                        Address
+                      </label>
+                      <Input
+                        value={formData.address}
+                        onChange={(e) =>
+                          handleInputChange('address', e.target.value)
+                        }
+                        placeholder="Full address"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Notes
+                    </label>
+                    <textarea
+                      value={formData.notes}
+                      onChange={(e) =>
+                        handleInputChange('notes', e.target.value)
+                      }
+                      placeholder="Additional notes about this brand..."
+                      className="w-full min-h-24 rounded-md border px-3 py-2 text-sm"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Primary Contact Section */}
+              <section>
+                <h3 className="text-lg font-semibold mb-4">
+                  Primary Contact *
+                </h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Name *
+                      </label>
+                      <Input
+                        value={formData.primaryContactName}
+                        onChange={(e) =>
+                          handleInputChange(
+                            'primaryContactName',
+                            e.target.value
+                          )
+                        }
+                        placeholder="Full name"
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Title
+                      </label>
+                      <Input
+                        value={formData.primaryContactTitle}
+                        onChange={(e) =>
+                          handleInputChange(
+                            'primaryContactTitle',
+                            e.target.value
+                          )
+                        }
+                        placeholder="e.g., Marketing Manager"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Email *
+                      </label>
+                      <Input
+                        value={formData.primaryContactEmail}
+                        onChange={(e) =>
+                          handleInputChange(
+                            'primaryContactEmail',
+                            e.target.value
+                          )
+                        }
+                        placeholder="email@company.com"
+                        type="email"
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Phone *
+                      </label>
+                      <Input
+                        value={formData.primaryContactPhone}
+                        onChange={(e) =>
+                          handleInputChange(
+                            'primaryContactPhone',
+                            e.target.value
+                          )
+                        }
+                        placeholder="+254 xxx xxx xxx"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Secondary Contact Section */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Secondary Contact</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleSecondaryContact}
+                  >
+                    {formData.secondaryContactEnabled ? 'Remove' : 'Add'}{' '}
+                    Secondary Contact
+                  </Button>
+                </div>
+
+                {formData.secondaryContactEnabled ? (
+                  <div className="space-y-4 border rounded-lg p-4 bg-gray-50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Name *
+                        </label>
+                        <Input
+                          value={formData.secondaryContactName}
+                          onChange={(e) =>
+                            handleInputChange(
+                              'secondaryContactName',
+                              e.target.value
+                            )
+                          }
+                          placeholder="Full name"
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Title
+                        </label>
+                        <Input
+                          value={formData.secondaryContactTitle}
+                          onChange={(e) =>
+                            handleInputChange(
+                              'secondaryContactTitle',
+                              e.target.value
+                            )
+                          }
+                          placeholder="e.g., Finance Director"
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Email *
+                        </label>
+                        <Input
+                          value={formData.secondaryContactEmail}
+                          onChange={(e) =>
+                            handleInputChange(
+                              'secondaryContactEmail',
+                              e.target.value
+                            )
+                          }
+                          placeholder="email@company.com"
+                          type="email"
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Phone *
+                        </label>
+                        <Input
+                          value={formData.secondaryContactPhone}
+                          onChange={(e) =>
+                            handleInputChange(
+                              'secondaryContactPhone',
+                              e.target.value
+                            )
+                          }
+                          placeholder="+254 xxx xxx xxx"
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                    <p className="text-gray-600">No secondary contact added</p>
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+
+          {/* Form Actions */}
+          <div className="sticky bottom-0 border-t bg-white px-6 py-4">
+            <div className="flex items-center justify-end gap-3">
+              <SheetClose asChild>
+                <Button variant="outline" disabled={isSubmitting}>
+                  Cancel
+                </Button>
+              </SheetClose>
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="bg-linear-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white min-w-32"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    {editingBrandId ? 'Update Brand' : 'Save Brand'}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </SheetContent>
       </Sheet>

@@ -10,8 +10,7 @@ import cloudinary from '../config/cloudinary';
 import Loan from '../models/Loan';
 
 import axios from 'axios';
-import Contribution from '../models/Contribution';
-import LoanRepayment from '../models/LoanRepayment';
+import BrandReg from '../models/BrandReg';
 export const member = async (memberData) => {
   const { name, email, password, role } = memberData;
 
@@ -203,134 +202,93 @@ export const addMember = async (formData) => {
   }
 };
 
-const generateLoanRef = () => `KAH-LN-${Date.now()}`;
+// export const addBrand = async (data) => {
+//   'use server';
+//   await connect();
 
-export const addLoan = async (data) => {
-  'use server';
+//   try {
+//     const brand = await BrandReg.create({
+//       businessName: data.businessName,
+//       category: data.category,
+//       website: data.website,
+//       address: data.address,
+//       city: data.city,
+//       country: data.country,
+//       status: data.status,
+//       tags: data.tags,
+//       notes: data.notes,
+
+//       primaryContactName: data.primaryContact.name,
+//       primaryContactTitle: data.primaryContact.title,
+//       primaryContactEmail: data.primaryContact.email,
+//       primaryContactPhone: data.primaryContact.phone,
+
+//       secondaryContactEnabled: !!data.secondaryContact,
+//       secondaryContactName: data.secondaryContact?.name,
+//       secondaryContactEmail: data.secondaryContact?.email,
+//       secondaryContactPhone: data.secondaryContact?.phone,
+//       secondaryContactTitle: data.secondaryContact?.title,
+
+//       recordedBy: 'system', // or session user
+//     });
+
+//     return {
+//       success: true,
+//       message: 'Brand created successfully',
+//       data: brand,
+//     };
+//   } catch (error) {
+//     console.error('❌ addBrand error:', error);
+//     return {
+//       success: false,
+//       message: error.message || 'Failed to create brand',
+//     };
+//   }
+// };
+
+export async function addBrand(data) {
   await connect();
 
+  const brand = await BrandReg.create({
+    businessName: data.businessName,
+    category: data.category,
+    address: data.address,
+    city: data.city,
+    country: data.country,
+    status: data.status,
+    tags: data.tags,
+    notes: data.notes,
+
+    primaryContactName: data.primaryContact.name,
+    primaryContactTitle: data.primaryContact.title,
+    primaryContactEmail: data.primaryContact.email,
+    primaryContactPhone: data.primaryContact.phone,
+
+    recordedBy: 'system',
+  });
+
+  return {
+    success: true,
+    data: {
+      id: brand._id.toString(),
+      businessName: brand.businessName,
+      category: brand.category,
+      status: brand.status,
+    },
+  };
+}
+export const fetchbrands = async () => {
+  'use server';
   try {
-    // 🔹 Extract TOP-LEVEL fields
-    const {
-      userId: memberId,
-      principalAmount,
-      interestRatePercent: interestRate,
-      loanDurationMonths: loanDuration,
+    await connect();
 
-      purpose,
-      approvedBy,
-      status,
-      disbursementDate,
-      dueDate,
-    } = data;
-    const interestAmount = principalAmount * (interestRate / 100);
-    const totalRepayment = principalAmount + interestAmount;
-    const monthlyInstallment = totalRepayment / loanDuration;
-    console.log({ interestAmount, totalRepayment, monthlyInstallment });
-    // 🔹 Extract NESTED fields
-
-    // --- HARD VALIDATION (before Mongo) ---
-    if (!memberId) throw new Error('Member ID is required');
-    if (principalAmount == null) throw new Error('principalAmount missing');
-    if (interestRate == null) throw new Error('interestRatePercent missing');
-    if (interestAmount == null) throw new Error('interestAmount missing');
-    if (totalRepayment == null) throw new Error('totalRepayment missing');
-    if (monthlyInstallment == null)
-      throw new Error('monthlyInstallment missing');
-    if (loanDuration == null) throw new Error('loanDurationMonths missing');
-
-    if (!approvedBy) throw new Error('approvedBy missing');
-    if (!disbursementDate || !dueDate) throw new Error('Loan dates missing');
-
-    // 🔹 Ensure user exists
-    const user = await User.findById(memberId);
-    if (!user) throw new Error('Member not found');
-
-    // 🔹 Prevent multiple active loans
-    const activeLoan = await Loan.findOne({ user: memberId, status: 'active' });
-    if (activeLoan) {
-      throw new Error('Member already has an active loan');
-    }
-
-    const loanRef = generateLoanRef();
-
-    // 🔹 CREATE LOAN (all values now defined)
-    const loan = await Loan.create({
-      user: memberId,
-      loanRef,
-      principalAmount,
-      interestRatePercent: interestRate,
-      interestAmount,
-      totalRepayment,
-      monthlyInstallment,
-      loanDurationMonths: loanDuration,
-      disbursementDate: new Date(disbursementDate),
-      dueDate: new Date(dueDate),
-      balance: totalRepayment,
-      status: status || 'active',
-      approvedBy,
-      purpose,
-    });
-
-    // 🔹 Attach loan to user
-    user.loans = user.loans || [];
-    user.loans.push(loan._id);
-    await user.save();
-    // =====================
-    // 📩 SEND SMS (DO NOT BREAK FLOW)
-    // =====================
-    try {
-      const firstName = user.firstName.split(' ')[0].toUpperCase();
-
-      const smsMessage = `Dear ${firstName}, your loan of KES ${amount.toLocaleString()} has been approved.
-Loan Ref: ${loanRef}
-Total Repayment: KES ${totalRepayment.toLocaleString()}
-Due Date: ${new Date(dueDate).toDateString()}.`;
-
-      const smsPayload = {
-        apikey: process.env.API_KEY,
-        partnerID: process.env.PARTNER_ID,
-        shortcode: process.env.SENDERID,
-        mobile: user.phone,
-        message: smsMessage,
-      };
-
-      const smsResponse = await axios.post(
-        'https://sms.textsms.co.ke/api/services/sendsms/',
-        smsPayload
-      );
-
-      const responseCode = smsResponse.data?.responses?.[0]?.['response-code'];
-
-      if (responseCode !== 200) {
-        console.error(
-          '⚠️ SMS failed:',
-          smsResponse.data.responses[0]['response-description']
-        );
-      }
-    } catch (smsError) {
-      // ⚠️ NEVER fail loan creation because of SMS
-      console.error(
-        '⚠️ SMS error:',
-        smsError.response?.data || smsError.message
-      );
-    }
-
-    return {
-      success: true,
-      message: 'Loan created successfully',
-      loanId: loan._id,
-      loanRef,
-    };
-  } catch (error) {
-    console.error('❌ addLoan error:', error);
-    return {
-      success: false,
-      message: error.message || 'Failed to create loan',
-    };
+    const brands = await BrandReg.find(); // Ensure this returns an array
+    console.log({ brands });
+    return brands; // Return the array directly
+  } catch (err) {
+    throw new Error('Failed to fetch brands!');
   }
 };
-
 export const addpayment = async (memberData) => {
   await connect();
 

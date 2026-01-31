@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import useAuth from '@/app/hooks/useAuth';
 
 const adminNavItems = [
   { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
@@ -45,14 +46,15 @@ const adminNavItems = [
 ];
 
 export const AdminLayout = ({ children }) => {
+  const { email, name, role, id } = useAuth();
   const location = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Static placeholder data (UI only)
   const adminUser = {
-    name: 'Admin User',
-    email: 'admin@valuablebrands.co.ke',
-    role: 'Administrator',
+    name: name || 'Admin User',
+    email: email || 'admin@valuablebrands.co.ke',
+    role: role || 'Administrator',
   };
 
   const [notifications, setNotifications] = useState(() => [
