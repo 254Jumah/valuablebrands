@@ -274,6 +274,7 @@ export async function addBrand(data) {
     tags: data.tags,
     notes: data.notes,
 
+    website: data.website,
     primaryContactName: data.primaryContact.name,
     primaryContactTitle: data.primaryContact.title,
     primaryContactEmail: data.primaryContact.email,
@@ -358,6 +359,28 @@ export const fetchbrands = async () => {
     return brands; // Return the array directly
   } catch (err) {
     throw new Error('Failed to fetch brands!');
+  }
+};
+export const deleteBrandAction = async (brandId) => {
+  await connect();
+  try {
+    const deletedBrand = await BrandReg.findByIdAndDelete(brandId);
+    if (!deletedBrand) {
+      return {
+        success: false,
+        message: 'Brand not found',
+      };
+    }
+    return {
+      success: true,
+      message: 'Brand deleted successfully',
+    };
+  } catch (error) {
+    console.error('❌ deleteBrandAction error:', error);
+    return {
+      success: false,
+      message: 'Failed to delete brand',
+    };
   }
 };
 export const addpayment = async (memberData) => {

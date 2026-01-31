@@ -4,7 +4,7 @@ const BrandregSchema = new mongoose.Schema(
   {
     businessName: { type: String, required: true },
     category: { type: String, required: true },
-    website: String,
+    website: { type: String },
     address: { type: String, required: true },
     city: { type: String, required: true },
     country: { type: String, required: true },

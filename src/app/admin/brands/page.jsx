@@ -10,6 +10,8 @@ import {
   X,
   Save,
   Loader2,
+  Eye,
+  Trash2,
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -39,9 +41,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { addBrand, fetchbrands, updateBrandAction } from '@/app/lib/action';
+import {
+  addBrand,
+  fetchbrands,
+  updateBrandAction,
+  deleteBrandAction,
+} from '@/app/lib/action';
 import useAuth from '@/app/hooks/useAuth';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // API Configuration
 const API_BASE_URL =
@@ -105,12 +121,6 @@ const getStatusBadgeClass = (status) => {
 };
 
 // ============================================================================
-// API SERVICE FUNCTIONS
-// ============================================================================
-
-// Update brand details function
-
-// ============================================================================
 // SKELETON COMPONENTS
 // ============================================================================
 
@@ -128,15 +138,282 @@ function TableSkeleton() {
             <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
           </div>
           <div className="h-6 w-20 bg-gray-200 rounded animate-pulse" />
-          <div className="h-4 w-24 bg-gray-200 rounded animate-pulse hidden md:block" />
           <div className="space-y-1 flex-1 hidden sm:block">
             <div className="h-4 w-28 bg-gray-200 rounded animate-pulse" />
-            <div className="h-3 w-32 bg-gray-200 rounded animate-pulse" />
           </div>
-          <div className="h-8 w-16 bg-gray-200 rounded animate-pulse" />
+          <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
         </div>
       ))}
     </div>
+  );
+}
+
+// ============================================================================
+// VIEW MODAL COMPONENT
+// ============================================================================
+
+function ViewBrandModal({ brand, isOpen, onClose }) {
+  if (!brand) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            {brand.businessName}
+          </DialogTitle>
+          <DialogDescription>
+            Brand details and contact information
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="h-125 w-full rounded-md border">
+          <div className="space-y-6 py-4">
+            {/* Business Details */}
+
+            <section>
+              <h3 className="font-semibold text-lg mb-3 pb-2 border-b">
+                Business Details
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Business Name</p>
+                  <p className="font-medium">{brand.businessName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Category</p>
+                  <p className="font-medium">{brand.category}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Status</p>
+                  <Badge
+                    className={cn('mt-1', getStatusBadgeClass(brand.status))}
+                  >
+                    {brand.status}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Website</p>
+                  <p className="font-medium">{brand.website || '—'}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <p className="text-sm text-gray-500">Address</p>
+                  <p className="font-medium">
+                    {[brand.address, brand.city, brand.country]
+                      .filter(Boolean)
+                      .join(', ') || '—'}
+                  </p>
+                </div>
+                <div className="md:col-span-2">
+                  <p className="text-sm text-gray-500">Tags</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {(brand.tags || []).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {(!brand.tags || brand.tags.length === 0) && (
+                      <span className="text-gray-400">No tags</span>
+                    )}
+                  </div>
+                </div>
+                {brand.notes && (
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-gray-500">Notes</p>
+                    <p className="font-medium mt-1 whitespace-pre-wrap">
+                      {brand.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Primary Contact */}
+            <section>
+              <h3 className="font-semibold text-lg mb-3 pb-2 border-b">
+                Primary Contact
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Name</p>
+                  <p className="font-medium">{brand.primaryContactName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Title</p>
+                  <p className="font-medium">
+                    {brand.primaryContactTitle || '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="font-medium">{brand.primaryContactEmail}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Phone</p>
+                  <p className="font-medium">{brand.primaryContactPhone}</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Secondary Contact */}
+            {brand.secondaryContact && (
+              <section>
+                <h3 className="font-semibold text-lg mb-3 pb-2 border-b">
+                  Secondary Contact
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Name</p>
+                    <p className="font-medium">{brand.secondaryContact.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Title</p>
+                    <p className="font-medium">
+                      {brand.secondaryContact.title || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Email</p>
+                    <p className="font-medium">
+                      {brand.secondaryContact.email}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Phone</p>
+                    <p className="font-medium">
+                      {brand.secondaryContact.phone}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Metadata */}
+            <section>
+              <h3 className="font-semibold text-lg mb-3 pb-2 border-b">
+                Metadata
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Registered By</p>
+                  <p className="font-medium">{brand.recordedBy || 'Unknown'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Registered Date</p>
+                  <p className="font-medium">
+                    {brand.createdAt
+                      ? new Date(brand.createdAt).toLocaleDateString()
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </ScrollArea>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================================
+// DELETE MODAL COMPONENT
+// ============================================================================
+
+function DeleteBrandModal({ brand, isOpen, onClose, onConfirm }) {
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deleteReason.trim()) {
+      toast.error('Please provide a reason for deletion');
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onConfirm(brand._id || brand.id, deleteReason);
+      onClose();
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-red-600 flex items-center gap-2">
+            <Trash2 className="h-5 w-5" />
+            Delete Brand
+          </DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete{' '}
+            <strong>{brand?.businessName}</strong>? This action cannot be
+            undone.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-4">
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-800">
+              <strong>Warning:</strong> Deleting this brand will permanently
+              remove all associated data.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <label className="block text-sm font-medium">
+              Reason for deletion *
+            </label>
+            <textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder="Please explain why you are deleting this brand..."
+              className="w-full min-h-32 rounded-md border px-3 py-2 text-sm"
+              rows={4}
+            />
+            <p className="text-xs text-gray-500">
+              This helps us improve our processes. Minimum 10 characters.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={
+              isDeleting ||
+              !deleteReason.trim() ||
+              deleteReason.trim().length < 10
+            }
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Brand
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -160,6 +437,12 @@ export default function AdminBrands() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [editingBrandId, setEditingBrandId] = useState(null);
+
+  // View/Delete Modals
+  const [viewingBrand, setViewingBrand] = useState(null);
+  const [deletingBrand, setDeletingBrand] = useState(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -249,6 +532,16 @@ export default function AdminBrands() {
     setEditingBrandId(brand._id || brand.id);
     setFormError('');
     setIsFormOpen(true);
+  };
+
+  const openViewModal = (brand) => {
+    setViewingBrand(brand);
+    setIsViewModalOpen(true);
+  };
+
+  const openDeleteModal = (brand) => {
+    setDeletingBrand(brand);
+    setIsDeleteModalOpen(true);
   };
 
   const handleInputChange = (field, value) => {
@@ -423,6 +716,34 @@ export default function AdminBrands() {
   };
 
   // ============================================================================
+  // DELETE HANDLER
+  // ============================================================================
+
+  const handleDeleteBrand = async (brandId, deleteReason) => {
+    try {
+      console.log(`🗑️ DELETING BRAND ID: ${brandId}`);
+
+      const result = await deleteBrandAction(brandId, deleteReason);
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to delete brand');
+      }
+
+      // Update local state
+      setBrands((prev) =>
+        prev.filter((brand) => (brand._id || brand.id) !== brandId)
+      );
+
+      toast.success('Brand deleted successfully!');
+      console.log('✅ BRAND DELETED SUCCESSFULLY');
+    } catch (error) {
+      console.error('❌ ERROR DELETING BRAND:', error);
+      toast.error(error.message);
+      throw error;
+    }
+  };
+
+  // ============================================================================
   // FILTERING AND PAGINATION
   // ============================================================================
 
@@ -472,7 +793,7 @@ export default function AdminBrands() {
   }, [searchQuery, statusFilter]);
 
   // ============================================================================
-  // RENDER
+  // UPDATE BRAND FUNCTION
   // ============================================================================
   const updateBrandDetails = async (brandId, brandData) => {
     try {
@@ -492,6 +813,11 @@ export default function AdminBrands() {
       throw error;
     }
   };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -574,109 +900,98 @@ export default function AdminBrands() {
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Business</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden md:table-cell">
-                      Category
-                    </TableHead>
-                    <TableHead>Primary Contact</TableHead>
-                    <TableHead>Registered Date</TableHead>
-                    <TableHead className="hidden lg:table-cell">Tags</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedBrands.map((brand) => (
-                    <TableRow key={brand._id} className="hover:bg-gray-50">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-linear-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-                            <Building2 className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <div className="font-medium uppercase">
-                              {brand?.businessName}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Business</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Primary Contact</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedBrands.map((brand) => (
+                      <TableRow key={brand._id} className="hover:bg-gray-50">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-linear-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+                              <Building2 className="h-5 w-5 text-blue-600" />
                             </div>
-                            <div className="text-sm text-gray-600">
-                              {[brand?.city, brand?.country]
-                                .filter(Boolean)
-                                .join(', ') || '—'}
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            'font-medium',
-                            getStatusBadgeClass(brand.status)
-                          )}
-                        >
-                          {brand.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {brand?.category}
-                      </TableCell>
-                      <TableCell>
-                        {brand?.primaryContactName && (
-                          <div>
-                            <div className="font-medium">
-                              {brand?.primaryContactName}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {brand?.primaryContactEmail}
+                            <div>
+                              <div className="font-medium uppercase">
+                                {brand?.businessName}
+                              </div>
                               <div className="text-sm text-gray-600">
+                                {[brand?.city, brand?.country]
+                                  .filter(Boolean)
+                                  .join(', ') || '—'}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {brand?.category}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={cn(
+                              'font-medium',
+                              getStatusBadgeClass(brand.status)
+                            )}
+                          >
+                            {brand.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {brand?.primaryContactName && (
+                            <div>
+                              <div className="font-medium">
+                                {brand?.primaryContactName}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {brand?.primaryContactEmail}
+                              </div>
+                              <div className="text-xs text-gray-500">
                                 {brand?.primaryContactPhone}
                               </div>
-                              <div className="text-sm text-green-900">
-                                {brand?.primaryContactTitle}
-                              </div>
                             </div>
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">
-                            {brand?.createdAt
-                              ? new Date(brand?.createdAt).toLocaleDateString()
-                              : '—'}
-                          </div>
-                          <div className="text-sm text-green-600">
-                            By: {brand?.recordedBy || 'Unknown'}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <div className="flex flex-wrap gap-1">
-                          {(brand?.tags || []).slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openViewModal(brand)}
+                              title="View Details"
                             >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditForm(brand)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          <span className="hidden sm:inline ml-2">Edit</span>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditForm(brand)}
+                              title="Edit Brand"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openDeleteModal(brand)}
+                              title="Delete Brand"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
               {/* Pagination */}
               {filteredBrands.length > itemsPerPage && (
@@ -1126,6 +1441,27 @@ export default function AdminBrands() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* View Modal */}
+      <ViewBrandModal
+        brand={viewingBrand}
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setViewingBrand(null);
+        }}
+      />
+
+      {/* Delete Modal */}
+      <DeleteBrandModal
+        brand={deletingBrand}
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeletingBrand(null);
+        }}
+        onConfirm={handleDeleteBrand}
+      />
     </div>
   );
 }
