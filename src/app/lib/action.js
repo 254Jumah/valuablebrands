@@ -249,8 +249,23 @@ export const addMember = async (formData) => {
 export async function addBrand(data) {
   await connect();
 
+  // Normalize name to avoid case issues
+  const businessName = data.businessName.trim().toLowerCase();
+
+  const existingBrand = await BrandReg.findOne({
+    businessName,
+    country: data.country,
+  });
+
+  if (existingBrand) {
+    return {
+      success: false,
+      message: 'Brand already exists',
+    };
+  }
+
   const brand = await BrandReg.create({
-    businessName: data.businessName,
+    businessName,
     category: data.category,
     address: data.address,
     city: data.city,
@@ -264,7 +279,7 @@ export async function addBrand(data) {
     primaryContactEmail: data.primaryContact.email,
     primaryContactPhone: data.primaryContact.phone,
 
-    recordedBy: 'system',
+    recordedBy: data.recordedBy || 'system', // or session user
   });
 
   return {
@@ -277,12 +292,13 @@ export async function addBrand(data) {
     },
   };
 }
+
 export const fetchbrands = async () => {
   'use server';
   try {
     await connect();
 
-    const brands = await BrandReg.find(); // Ensure this returns an array
+    const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first; // Ensure this returns an array
     console.log({ brands });
     return brands; // Return the array directly
   } catch (err) {

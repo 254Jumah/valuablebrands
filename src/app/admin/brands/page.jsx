@@ -287,8 +287,6 @@ export default function AdminBrands() {
   };
 
   const handleSubmit = async () => {
-    console.log('🟡 SUBMIT BUTTON CLICKED');
-
     if (!validateForm()) {
       console.log('❌ FORM VALIDATION FAILED');
       return;
@@ -311,6 +309,7 @@ export default function AdminBrands() {
         status: formData.status,
         tags: parseTags(formData.tags),
         notes: formData.notes || undefined,
+        recordedBy: name,
         primaryContact: {
           name: formData.primaryContactName,
           title: formData.primaryContactTitle || undefined,
@@ -377,6 +376,7 @@ export default function AdminBrands() {
       }
 
       // Close form and reset
+      getbrandsData();
       setIsFormOpen(false);
       setFormData(initialBrandForm);
       setEditingBrandId(null);
@@ -553,7 +553,9 @@ export default function AdminBrands() {
                       Category
                     </TableHead>
                     <TableHead>Primary Contact</TableHead>
+                    <TableHead>Registered Date</TableHead>
                     <TableHead className="hidden lg:table-cell">Tags</TableHead>
+
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -566,7 +568,7 @@ export default function AdminBrands() {
                             <Building2 className="h-5 w-5 text-blue-600" />
                           </div>
                           <div>
-                            <div className="font-medium">
+                            <div className="font-medium uppercase">
                               {brand?.businessName}
                             </div>
                             <div className="text-sm text-gray-600">
@@ -591,17 +593,32 @@ export default function AdminBrands() {
                         {brand?.category}
                       </TableCell>
                       <TableCell>
-                        {brand?.primaryContact && (
+                        {brand?.primaryContactPhone && (
                           <div>
                             <div className="font-medium">
-                              {brand?.primaryContact?.name}
+                              {brand?.primaryContactName}
                             </div>
                             <div className="text-sm text-gray-600">
-                              {brand?.primaryContact?.email}
+                              {brand?.primaryContactEmail}
+                              <div className="text-sm text-gray-600">
+                                {brand?.primaryContactPhone}
+                              </div>
                             </div>
                           </div>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {brand?.primaryContactPhone && (
+                          <div>
+                            <div className="font-medium">
+                              {new Date(brand?.createdAt).toLocaleDateString()}
+                            </div>
+                            <div className="text-sm text-green-600">
+                              By: {brand?.recordedBy}
+                            </div>
+                          </div>
+                        )}
+                      </TableCell>{' '}
                       <TableCell className="hidden lg:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {(brand?.tags || []).slice(0, 3).map((tag) => (
