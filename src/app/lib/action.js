@@ -292,6 +292,61 @@ export async function addBrand(data) {
     },
   };
 }
+export async function updateBrandAction(brandId, data) {
+  await connect();
+
+  const businessName = data.businessName.trim().toLowerCase();
+
+  // 🔍 Prevent duplicate brand name (excluding current brand)
+  const existingBrand = await BrandReg.findOne({
+    businessName,
+    _id: { $ne: brandId },
+  });
+
+  if (existingBrand) {
+    return {
+      success: false,
+      message: 'Another brand with this name already exists',
+    };
+  }
+
+  const brand = await BrandReg.findByIdAndUpdate(
+    brandId,
+    {
+      businessName,
+      category: data.category,
+      address: data.address,
+      city: data.city,
+      country: data.country,
+      status: data.status,
+      tags: data.tags,
+      notes: data.notes,
+
+      primaryContactName: data.primaryContact?.name,
+      primaryContactTitle: data.primaryContact?.title,
+      primaryContactEmail: data.primaryContact?.email,
+      primaryContactPhone: data.primaryContact?.phone,
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!brand) {
+    return {
+      success: false,
+      message: 'Brand not found',
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      id: brand._id.toString(),
+      businessName: brand.businessName,
+      category: brand.category,
+      status: brand.status,
+    },
+  };
+}
 
 export const fetchbrands = async () => {
   'use server';

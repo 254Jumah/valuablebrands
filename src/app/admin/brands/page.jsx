@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2,
   Pencil,
@@ -40,15 +40,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { addBrand, fetchbrands } from '@/app/lib/action';
+import { addBrand, fetchbrands, updateBrandAction } from '@/app/lib/action';
 import useAuth from '@/app/hooks/useAuth';
 
 // API Configuration
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
-// Status options
-const statusOptions = ['Prospect', 'Active', 'Do not contact'];
+// Default status options (will be enriched from brands data)
+const defaultStatusOptions = ['Prospect', 'Active', 'Do not contact'];
 
 // ============================================================================
 // DATA MODELS AND UTILITIES
@@ -105,8 +105,10 @@ const getStatusBadgeClass = (status) => {
 };
 
 // ============================================================================
-// API SERVICE - SIMPLIFIED
+// API SERVICE FUNCTIONS
 // ============================================================================
+
+// Update brand details function
 
 // ============================================================================
 // SKELETON COMPONENTS
@@ -167,12 +169,52 @@ export default function AdminBrands() {
   // DATA FETCHING
   // ============================================================================
 
+  const getbrandsData = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchbrands();
+      setBrands(data || []);
+    } catch (error) {
+      console.error('Failed to fetch brands:', error);
+      setError('Failed to load brands data');
+      toast.error('Failed to load brands data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    getbrandsData();
+  }, []);
+
   // ============================================================================
-  // FORM HANDLERS - SIMPLIFIED
+  // DERIVED STATE - Get status options from brands data
+  // ============================================================================
+
+  // Get unique statuses from brands data
+  const statusOptions = useMemo(() => {
+    if (!brands || brands.length === 0) return defaultStatusOptions;
+
+    // Extract unique statuses from brands
+    const uniqueStatuses = [
+      ...new Set(
+        brands.map((brand) => brand.status).filter(Boolean) // Remove null/undefined
+      ),
+    ];
+
+    // Combine with default options and remove duplicates
+    return [...new Set([...defaultStatusOptions, ...uniqueStatuses])];
+  }, [brands]);
+
+  // ============================================================================
+  // FORM HANDLERS
   // ============================================================================
 
   const openCreateForm = () => {
-    setFormData(initialBrandForm);
+    setFormData({
+      ...initialBrandForm,
+      status: statusOptions[0] || 'Prospect',
+    });
     setEditingBrandId(null);
     setFormError('');
     setIsFormOpen(true);
@@ -188,14 +230,14 @@ export default function AdminBrands() {
       address: brand.address || '',
       city: brand.city || '',
       country: brand.country || '',
-      status: brand.status || 'Prospect',
+      status: brand.status || statusOptions[0] || 'Prospect',
       tags: (brand.tags || []).join(', ') || '',
       notes: brand.notes || '',
 
-      primaryContactName: brand.primaryContact?.name || '',
-      primaryContactTitle: brand.primaryContact?.title || '',
-      primaryContactEmail: brand.primaryContact?.email || '',
-      primaryContactPhone: brand.primaryContact?.phone || '',
+      primaryContactName: brand.primaryContactName || '',
+      primaryContactTitle: brand.primaryContactTitle || '',
+      primaryContactEmail: brand.primaryContactEmail || '',
+      primaryContactPhone: brand.primaryContactPhone || '',
 
       secondaryContactEnabled: !!brand.secondaryContact,
       secondaryContactName: brand.secondaryContact?.name || '',
@@ -204,7 +246,7 @@ export default function AdminBrands() {
       secondaryContactPhone: brand.secondaryContact?.phone || '',
     });
 
-    setEditingBrandId(brand.id);
+    setEditingBrandId(brand._id || brand.id);
     setFormError('');
     setIsFormOpen(true);
   };
@@ -327,31 +369,16 @@ export default function AdminBrands() {
       };
 
       if (editingBrandId) {
-        // Update existing brand
-        console.log(`🔄 UPDATING BRAND ID: ${editingBrandId}`);
-
-        // Call your update API
-        const response = await fetch(
-          `${API_BASE_URL}/brands/${editingBrandId}`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(brandData),
-          }
+        // Update existing brand using the separate function
+        const updatedBrand = await updateBrandDetails(
+          editingBrandId,
+          brandData
         );
-
-        if (!response.ok) {
-          throw new Error('Failed to update brand');
-        }
-
-        const updatedBrand = await response.json();
 
         // Update local state
         setBrands((prev) =>
           prev.map((brand) =>
-            brand.id === editingBrandId ? updatedBrand : brand
+            (brand._id || brand.id) === editingBrandId ? updatedBrand : brand
           )
         );
 
@@ -378,7 +405,10 @@ export default function AdminBrands() {
       // Close form and reset
       getbrandsData();
       setIsFormOpen(false);
-      setFormData(initialBrandForm);
+      setFormData({
+        ...initialBrandForm,
+        status: statusOptions[0] || 'Prospect',
+      });
       setEditingBrandId(null);
 
       console.log('🏁 SUBMISSION COMPLETED SUCCESSFULLY');
@@ -391,6 +421,7 @@ export default function AdminBrands() {
       console.log('🟢 SUBMISSION PROCESS ENDED');
     }
   };
+
   // ============================================================================
   // FILTERING AND PAGINATION
   // ============================================================================
@@ -443,25 +474,24 @@ export default function AdminBrands() {
   // ============================================================================
   // RENDER
   // ============================================================================
-  const getbrandsData = async () => {
-    setLoading(true);
+  const updateBrandDetails = async (brandId, brandData) => {
     try {
-      const data = await fetchbrands();
+      console.log(`🔄 UPDATING BRAND ID: ${brandId}`);
 
-      setBrands(data || []);
+      const result = await updateBrandAction(brandId, brandData);
 
-      // Transform data for display
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to update brand');
+      }
+      getbrandsData(); // Refresh the brands list
+
+      console.log('✅ BRAND UPDATED SUCCESSFULLY');
+      return result.data;
     } catch (error) {
-      console.error('Failed to fetch analytics data:', error);
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
+      console.error('❌ ERROR UPDATING BRAND:', error);
+      throw error;
     }
   };
-
-  useEffect(() => {
-    getbrandsData();
-  }, []);
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -555,7 +585,6 @@ export default function AdminBrands() {
                     <TableHead>Primary Contact</TableHead>
                     <TableHead>Registered Date</TableHead>
                     <TableHead className="hidden lg:table-cell">Tags</TableHead>
-
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -593,7 +622,7 @@ export default function AdminBrands() {
                         {brand?.category}
                       </TableCell>
                       <TableCell>
-                        {brand?.primaryContactPhone && (
+                        {brand?.primaryContactName && (
                           <div>
                             <div className="font-medium">
                               {brand?.primaryContactName}
@@ -603,22 +632,25 @@ export default function AdminBrands() {
                               <div className="text-sm text-gray-600">
                                 {brand?.primaryContactPhone}
                               </div>
+                              <div className="text-sm text-green-900">
+                                {brand?.primaryContactTitle}
+                              </div>
                             </div>
                           </div>
                         )}
                       </TableCell>
                       <TableCell>
-                        {brand?.primaryContactPhone && (
-                          <div>
-                            <div className="font-medium">
-                              {new Date(brand?.createdAt).toLocaleDateString()}
-                            </div>
-                            <div className="text-sm text-green-600">
-                              By: {brand?.recordedBy}
-                            </div>
+                        <div>
+                          <div className="font-medium">
+                            {brand?.createdAt
+                              ? new Date(brand?.createdAt).toLocaleDateString()
+                              : '—'}
                           </div>
-                        )}
-                      </TableCell>{' '}
+                          <div className="text-sm text-green-600">
+                            By: {brand?.recordedBy || 'Unknown'}
+                          </div>
+                        </div>
+                      </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {(brand?.tags || []).slice(0, 3).map((tag) => (
