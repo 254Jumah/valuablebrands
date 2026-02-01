@@ -11,6 +11,7 @@ import Loan from '../models/Loan';
 
 import axios from 'axios';
 import BrandReg from '../models/BrandReg';
+import Event from '../models/Event';
 export const member = async (memberData) => {
   const { name, email, password, role } = memberData;
 
@@ -201,7 +202,109 @@ export const addMember = async (formData) => {
     };
   }
 };
+export const fetchEvents = async () => {
+  'use server';
+  try {
+    await connect();
+    const events = await Event.find().sort({ date: 1 }); // ascending order
+    return events; // Return the array directly
+  } catch (err) {
+    throw new Error('Failed to fetch events!');
+  }
+};
+export const addEvent = async (data) => {
+  'use server';
+  await connect();
+  try {
+    const event = await Event.create({
+      title: data.title,
+      description: data.description,
+      date: data.date,
+      location: data.location,
+      featured: data.featured || false,
+      category: data.category,
+      time: data.time,
+      recordedBy: data.recordedBy,
+      status: data.status,
+      image: data.image,
+      capacity: data.capacity,
+    });
+    return {
+      success: true,
+      message: 'Event created successfully',
+      data: event,
+    };
+  } catch (error) {
+    console.error('❌ addEvent error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to create event',
+    };
+  }
+};
+export const updateEvent = async (eventId, data) => {
+  'use server';
+  await connect();
+  try {
+    const updatedEvent = await Event.findByIdAndUpdate(
+      eventId,
+      {
+        title: data.title,
+        description: data.description,
+        date: data.date,
+        location: data.location,
+        category: data.category,
+        image: data.image,
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updatedEvent) {
+      throw new Error('Event not found');
+    }
+    return {
+      success: true,
+      message: 'Event updated successfully',
+      data: updatedEvent,
+    };
+  } catch (error) {
+    console.error('❌ updateEvent error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to update event',
+    };
+  }
+};
 
+export const deleteEvent = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const deletedEvent = await Event.findByIdAndDelete(eventId);
+    if (!deletedEvent) {
+      throw new Error('Event not found');
+    }
+    return {
+      success: true,
+      message: 'Event deleted successfully',
+    };
+  } catch (error) {
+    console.error('❌ deleteEvent error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to delete event',
+    };
+  }
+};
+export const fetchEventBrands = async () => {
+  'use server';
+  await connect();
+  try {
+    const brands = await BrandReg.find().sort({ businessName: 1 });
+    return brands;
+  } catch (err) {
+    throw new Error('Failed to fetch event brands!');
+  }
+};
 // export const addBrand = async (data) => {
 //   'use server';
 //   await connect();

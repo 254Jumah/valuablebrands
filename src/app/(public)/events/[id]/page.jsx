@@ -1,13 +1,13 @@
-"use client";
-import React from "react";
+'use client';
+import React from 'react';
 
-import { Calendar, MapPin, ArrowLeft, Play, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { events } from "@/data/mockData";
-import { useParams } from "next/navigation";
-import Link from "next/link";
+import { Calendar, MapPin, ArrowLeft, Play, Share2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { events } from '@/data/mockData';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
 
 const EventDetail = () => {
   const { id } = useParams();
@@ -54,11 +54,11 @@ const EventDetail = () => {
                 <div className="flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-accent" />
                   <span>
-                    {new Date(event.date).toLocaleDateString("en-US", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
+                    {new Date(event.date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
                     })}
                   </span>
                 </div>
@@ -144,11 +144,11 @@ const EventDetail = () => {
                         Date
                       </dt>
                       <dd className="text-foreground">
-                        {new Date(event.date).toLocaleDateString("en-US", {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
+                        {new Date(event.date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
                         })}
                       </dd>
                     </div>
@@ -183,7 +183,7 @@ const EventDetail = () => {
                       {relatedEvents.map((related) => (
                         <Link
                           key={related.id}
-                          to={`/events/${related.id}`}
+                          href={`/events/${related.id}`}
                           className="block rounded-lg border border-border/50 p-3 transition-colors hover:border-accent/50 hover:bg-muted"
                         >
                           <h4 className="font-medium text-foreground">
@@ -191,11 +191,11 @@ const EventDetail = () => {
                           </h4>
                           <p className="text-sm text-muted-foreground">
                             {new Date(related.date).toLocaleDateString(
-                              "en-US",
+                              'en-US',
                               {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
                               }
                             )}
                           </p>
