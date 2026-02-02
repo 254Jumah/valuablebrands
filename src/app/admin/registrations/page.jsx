@@ -283,7 +283,7 @@ export default function AdminEventFinance() {
   const [loadingEvents, setLoadingEvents] = useState(true);
 
   const brandsById = useMemo(() => {
-    return new Map(brands.map((b) => [b.id, b]));
+    return new Map(brands.map((b) => [b._id, b]));
   }, [brands]);
 
   const form = useForm({
@@ -335,7 +335,7 @@ export default function AdminEventFinance() {
         setLoadingBrands(true);
 
         const registrationsData = await fetchRegistrations();
-
+        console.log('Fetched registrations:', registrationsData);
         setRegistrations(registrationsData || []);
       } catch (err) {
         console.error('Failed to fetch data:', err);
@@ -1283,11 +1283,14 @@ export default function AdminEventFinance() {
                     : 0;
 
                   return (
-                    <TableRow key={r.id}>
+                    <TableRow key={r._id}>
                       <TableCell>
                         <div className="space-y-1">
-                          <div className="font-medium text-foreground">
-                            {brand?.businessName ?? 'Unknown business'}
+                          <div className="font-medium text-foreground uppercase">
+                            {brand?.businessName ||
+                              (typeof r.brandId === 'object' &&
+                                r.brandId.businessName) ||
+                              'Unknown Business'}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Badge
@@ -1305,7 +1308,10 @@ export default function AdminEventFinance() {
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <div className="text-sm text-foreground">
-                          {r.eventName}
+                          {r.eventName ||
+                            (typeof r.eventId === 'object' &&
+                              r.eventId.title) ||
+                            'Unknown Event'}
                         </div>
                       </TableCell>
                       <TableCell>

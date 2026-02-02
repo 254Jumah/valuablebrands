@@ -531,9 +531,15 @@ export const fetchRegistrations = async () => {
   try {
     await connect();
 
-    const registrations = await Registration.find().sort({ createdAt: -1 });
+    const registrations = await Registration.find()
+      .populate('brandId')
+      .populate('eventId')
+      .sort({ createdAt: -1 })
+      .lean(); // 🔥 CRITICAL
+    console.log({ registrations });
     return registrations;
   } catch (err) {
+    console.error(err);
     throw new Error('Failed to fetch registrations!');
   }
 };
