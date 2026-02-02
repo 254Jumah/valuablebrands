@@ -12,6 +12,7 @@ import Loan from '../models/Loan';
 import axios from 'axios';
 import BrandReg from '../models/BrandReg';
 import Event from '../models/Event';
+import Registration from '../models/Registration';
 export const member = async (memberData) => {
   const { name, email, password, role } = memberData;
 
@@ -207,6 +208,7 @@ export const fetchEvents = async () => {
   try {
     await connect();
     const events = await Event.find().sort({ date: 1 }); // ascending order
+    console.log({ events });
     return events; // Return the array directly
   } catch (err) {
     throw new Error('Failed to fetch events!');
@@ -299,7 +301,8 @@ export const fetchEventBrands = async () => {
   'use server';
   await connect();
   try {
-    const brands = await BrandReg.find().sort({ businessName: 1 });
+    const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first
+    console.log({ brands });
     return brands;
   } catch (err) {
     throw new Error('Failed to fetch event brands!');
@@ -486,11 +489,166 @@ export const deleteBrandAction = async (brandId) => {
     };
   }
 };
+
+export const addRegistration = async (registrationData) => {
+  'use server';
+  await connect();
+  try {
+    const registration = await Registration.create({
+      amountPaid: registrationData.amountPaid,
+
+      amountTotal: registrationData.amountTotal,
+      brandId: registrationData.brandId,
+      dueDate: registrationData.dueDate,
+      eventId: registrationData.eventName,
+
+      invoiceNumber: registrationData.invoiceNumber,
+      invoiceStatus: registrationData.invoiceStatus,
+      notes: registrationData.notes,
+
+      notes: registrationData.notes,
+      packageTier: registrationData.packageTier,
+      pax: registrationData.pax,
+      registrationStatus: registrationData.registrationStatus,
+      recordedBy: registrationData.recordedBy || 'system', // or session user
+    });
+    return {
+      success: true,
+      data: registration,
+      message: 'Registration added successfully',
+    };
+  } catch (error) {
+    console.error('❌ addRegistration error:', error);
+
+    return {
+      success: false,
+      message: error.message || 'Failed to add registration',
+    };
+  }
+};
+export const fetchRegistrations = async () => {
+  'use server';
+  try {
+    await connect();
+
+    const registrations = await Registration.find().sort({ createdAt: -1 });
+    return registrations;
+  } catch (err) {
+    throw new Error('Failed to fetch registrations!');
+  }
+};
+
+export const updateRegistration = async (registrationId, registrationData) => {
+  'use server';
+  await connect();
+  try {
+    const updatedRegistration = await Registration.findByIdAndUpdate(
+      registrationId,
+      registrationData,
+      { new: true, runValidators: true }
+    );
+    if (!updatedRegistration) {
+      throw new Error('Registration not found');
+    }
+    return {
+      success: true,
+      message: 'Registration updated successfully',
+      data: updatedRegistration,
+    };
+  } catch (error) {
+    console.error('❌ updateRegistration error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to update registration',
+    };
+  }
+};
+export const deleteRegistration = async (registrationId) => {
+  'use server';
+  await connect();
+  try {
+    const deletedRegistration =
+      await Registration.findByIdAndDelete(registrationId);
+    if (!deletedRegistration) {
+      throw new Error('Registration not found');
+    }
+    return {
+      success: true,
+      message: 'Registration deleted successfully',
+    };
+  } catch (error) {
+    console.error('❌ deleteRegistration error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to delete registration',
+    };
+  }
+};
+
+export const addReminder = async (reminderData) => {
+  await connect();
+  try {
+    const reminder = await Reminder.create(reminderData);
+    return {
+      success: true,
+      data: reminder,
+    };
+  } catch (error) {
+    console.error('❌ addReminder error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to add reminder',
+    };
+  }
+};
+export const updateReminder = async (reminderId, reminderData) => {
+  await connect();
+  try {
+    const updatedReminder = await Reminder.findByIdAndUpdate(
+      reminderId,
+      reminderData,
+      { new: true, runValidators: true }
+    );
+    if (!updatedReminder) {
+      throw new Error('Reminder not found');
+    }
+    return {
+      success: true,
+      message: 'Reminder updated successfully',
+      data: updatedReminder,
+    };
+  } catch (error) {
+    console.error('❌ updateReminder error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to update reminder',
+    };
+  }
+};
+export const deleteReminder = async (reminderId) => {
+  await connect();
+  try {
+    const deletedReminder = await Reminder.findByIdAndDelete(reminderId);
+    if (!deletedReminder) {
+      throw new Error('Reminder not found');
+    }
+    return {
+      success: true,
+      message: 'Reminder deleted successfully',
+    };
+  } catch (error) {
+    console.error('❌ deleteReminder error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to delete reminder',
+    };
+  }
+};
+
 export const addpayment = async (memberData) => {
   await connect();
 
   const {
-    memberId,
     amount,
     date,
     type,

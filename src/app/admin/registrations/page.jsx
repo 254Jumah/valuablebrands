@@ -15,6 +15,8 @@ import {
   Trash2,
   Users,
   Bell,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -30,12 +32,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -63,11 +67,27 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// Import backend API functions (you'll need to create these)
+import {
+  fetchEventBrands as fetchBrands,
+  addRegistration as apiAddRegistration,
+  updateRegistration as apiUpdateRegistration,
+  deleteRegistration as apiDeleteRegistration,
+  addReminder as apiAddReminder,
+  updateReminder as apiUpdateReminder,
+  deleteReminder as apiDeleteReminder,
+  fetchRegistrations,
+  fetchEvents,
+} from '@/app/lib/action';
 
 import { packageCatalog } from '@/data/mockEventFinance';
 import { RemindersPanel } from '@/components/layout/RemindersPanel';
-import { useEventFinance } from '@/hooks/useEventFinance';
+import useAuth from '@/app/hooks/useAuth';
 
 const registrationStatuses = [
   'Lead',
@@ -178,27 +198,89 @@ function registrationToFormValues(r) {
   };
 }
 
+// Loading Skeleton Components
+const CardSkeleton = () => (
+  <Card className="border-border/50">
+    <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-10 w-10 rounded-lg" />
+    </CardHeader>
+    <CardContent>
+      <Skeleton className="h-8 w-32 mb-1" />
+      <Skeleton className="h-3 w-40" />
+    </CardContent>
+  </Card>
+);
+
+const TableRowSkeleton = () => (
+  <TableRow>
+    <TableCell>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+    </TableCell>
+    <TableCell className="hidden lg:table-cell">
+      <Skeleton className="h-4 w-40" />
+    </TableCell>
+    <TableCell>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-3 w-16" />
+      </div>
+    </TableCell>
+    <TableCell className="hidden md:table-cell">
+      <Skeleton className="h-4 w-12" />
+    </TableCell>
+    <TableCell>
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-16 rounded-full" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+    </TableCell>
+    <TableCell className="hidden md:table-cell">
+      <Skeleton className="h-4 w-20" />
+    </TableCell>
+    <TableCell className="hidden md:table-cell">
+      <Skeleton className="h-4 w-20" />
+    </TableCell>
+    <TableCell className="hidden lg:table-cell">
+      <Skeleton className="h-4 w-20" />
+    </TableCell>
+    <TableCell className="hidden lg:table-cell">
+      <Skeleton className="h-6 w-10 rounded-full" />
+    </TableCell>
+    <TableCell>
+      <div className="flex justify-end gap-2">
+        <Skeleton className="h-8 w-8 rounded" />
+        <Skeleton className="h-8 w-8 rounded" />
+        <Skeleton className="h-8 w-8 rounded" />
+      </div>
+    </TableCell>
+  </TableRow>
+);
+
 export default function AdminEventFinance() {
-  const {
-    brands,
-    registrations,
-    addRegistration,
-    updateRegistration,
-    deleteRegistration,
-    addReminder,
-    updateReminder,
-    deleteReminder,
-  } = useEventFinance();
+  const { email, name, role, id } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [loadingBrands, setLoadingBrands] = useState(true);
+  const [error, setError] = useState(null);
+  const [brands, setBrands] = useState([]);
+
+  const [registrations, setRegistrations] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [invoiceFilter, setInvoiceFilter] = useState('All');
 
-  // Sheet states
-  const [formSheetOpen, setFormSheetOpen] = useState(false);
-  const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  // Dialog states
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewingRegistration, setViewingRegistration] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
 
   const brandsById = useMemo(() => {
     return new Map(brands.map((b) => [b.id, b]));
@@ -209,17 +291,76 @@ export default function AdminEventFinance() {
     defaultValues: emptyFormValues(),
     mode: 'onBlur',
   });
+  const getBrandsData = async () => {
+    setLoading(true);
+    setLoadingBrands(true);
+    try {
+      const data = await fetchBrands();
+
+      setBrands(data || []);
+    } catch (error) {
+      setError('Failed to load brands data');
+      toast.error('Failed to load brands data');
+    } finally {
+      setLoading(false);
+      setLoadingBrands(false);
+    }
+  };
+  useEffect(() => {
+    getBrandsData();
+  }, []);
+
+  const getEventsData = async () => {
+    setLoading(true);
+    setLoadingEvents(true);
+    try {
+      const data = await fetchEvents();
+      setEvents(data || []);
+    } catch (error) {
+      setError('Failed to load events data');
+      toast.error('Failed to load events data');
+    } finally {
+      setLoading(false);
+      setLoadingEvents(false);
+    }
+  };
+  useEffect(() => {
+    getEventsData();
+  }, []);
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setLoadingBrands(true);
+
+        const registrationsData = await fetchRegistrations();
+
+        setRegistrations(registrationsData || []);
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+        setError('Failed to load data. Please try again.');
+      } finally {
+        setLoading(false);
+        setLoadingBrands(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   // Auto-fill pricing/pax based on tier when creating
   const tier = form.watch('packageTier');
   useEffect(() => {
     if (editingId) return;
     const cfg = packageCatalog[tier];
-    form.setValue('amountTotal', cfg.price, { shouldValidate: true });
-    form.setValue('pax', cfg.includedPax, { shouldValidate: true });
+    form.setValue('amountTotal', cfg?.price || 0, { shouldValidate: true });
+    form.setValue('pax', cfg?.includedPax, { shouldValidate: true });
   }, [tier, editingId, form]);
 
   const filtered = useMemo(() => {
+    if (loading) return [];
+
     const q = query.trim().toLowerCase();
     return registrations
       .filter((r) =>
@@ -245,40 +386,44 @@ export default function AdminEventFinance() {
           .toLowerCase();
         return haystack.includes(q);
       });
-  }, [registrations, statusFilter, invoiceFilter, query, brandsById]);
+  }, [registrations, statusFilter, invoiceFilter, query, brandsById, loading]);
 
   const totals = useMemo(() => {
+    if (loading)
+      return { totalAmount: 0, paidAmount: 0, outstanding: 0, pax: 0 };
+
     const totalAmount = registrations.reduce((s, r) => s + r.amountTotal, 0);
     const paidAmount = registrations.reduce((s, r) => s + r.amountPaid, 0);
     const pax = registrations.reduce((s, r) => s + r.pax, 0);
     const outstanding = Math.max(0, totalAmount - paidAmount);
     return { totalAmount, paidAmount, outstanding, pax };
-  }, [registrations]);
+  }, [registrations, loading]);
 
   const openCreate = () => {
     setEditingId(null);
     form.reset(emptyFormValues());
-    setFormSheetOpen(true);
+    setFormDialogOpen(true);
   };
 
   const openEdit = (r) => {
     setEditingId(r.id);
     form.reset(registrationToFormValues(r));
-    setFormSheetOpen(true);
+    setFormDialogOpen(true);
   };
 
   const openDetail = (r) => {
     setViewingRegistration(r);
-    setDetailSheetOpen(true);
+    setDetailDialogOpen(true);
   };
 
-  const onSubmit = (values) => {
-    const dueDateIso = values.dueDate
-      ? dateInputToIso(values.dueDate)
-      : undefined;
+  const onSubmit = async (values) => {
+    setIsSubmitting(true);
+    try {
+      const dueDateIso = values.dueDate
+        ? dateInputToIso(values.dueDate)
+        : undefined;
 
-    if (editingId) {
-      updateRegistration(editingId, {
+      const registrationData = {
         brandId: values.brandId,
         eventName: values.eventName,
         packageTier: values.packageTier,
@@ -290,37 +435,615 @@ export default function AdminEventFinance() {
         amountPaid: values.amountPaid,
         dueDate: dueDateIso,
         notes: values.notes || undefined,
-      });
-    } else {
-      addRegistration({
-        brandId: values.brandId,
-        eventName: values.eventName,
-        packageTier: values.packageTier,
-        pax: values.pax,
-        registrationStatus: values.registrationStatus,
-        invoiceStatus: values.invoiceStatus,
-        invoiceNumber: values.invoiceNumber || undefined,
-        amountTotal: values.amountTotal,
-        amountPaid: values.amountPaid,
-        dueDate: dueDateIso,
-        notes: values.notes || undefined,
-      });
+        recordedBy: name,
+      };
+
+      if (editingId) {
+        // Update registration
+        const updatedRegistration = await apiUpdateRegistration(
+          editingId,
+          registrationData
+        );
+        setRegistrations((prev) =>
+          prev.map((r) => (r.id === editingId ? updatedRegistration : r))
+        );
+      } else {
+        const response = await apiAddRegistration(registrationData);
+
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+
+        setRegistrations((prev) => [response.data, ...prev]);
+        toast.success(response.message);
+      }
+
+      setFormDialogOpen(false);
+      form.reset(emptyFormValues());
+    } catch (err) {
+      console.error('Submission error:', err);
+      // Handle error (show toast, etc.)
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setFormSheetOpen(false);
   };
 
-  const handleDelete = (id) => {
-    deleteRegistration(id);
+  const handleDelete = async (id) => {
+    try {
+      await apiDeleteRegistration(id);
+      setRegistrations((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error('Delete error:', err);
+      // Handle error
+    }
+  };
+
+  // API wrapper functions for reminders (to be implemented)
+  const handleAddReminder = async (registrationId, reminderData) => {
+    try {
+      const newReminder = await apiAddReminder(registrationId, reminderData);
+      // Update local state
+      setRegistrations((prev) =>
+        prev.map((r) =>
+          r.id === registrationId
+            ? { ...r, reminders: [...(r.reminders || []), newReminder] }
+            : r
+        )
+      );
+      return newReminder;
+    } catch (err) {
+      console.error('Add reminder error:', err);
+      throw err;
+    }
+  };
+
+  const handleUpdateReminder = async (
+    registrationId,
+    reminderId,
+    reminderData
+  ) => {
+    try {
+      const updatedReminder = await apiUpdateReminder(
+        registrationId,
+        reminderId,
+        reminderData
+      );
+      // Update local state
+      setRegistrations((prev) =>
+        prev.map((r) =>
+          r.id === registrationId
+            ? {
+                ...r,
+                reminders: (r.reminders || []).map((rm) =>
+                  rm.id === reminderId ? updatedReminder : rm
+                ),
+              }
+            : r
+        )
+      );
+    } catch (err) {
+      console.error('Update reminder error:', err);
+      throw err;
+    }
+  };
+
+  const handleDeleteReminder = async (registrationId, reminderId) => {
+    try {
+      await apiDeleteReminder(registrationId, reminderId);
+      // Update local state
+      setRegistrations((prev) =>
+        prev.map((r) =>
+          r.id === registrationId
+            ? {
+                ...r,
+                reminders: (r.reminders || []).filter(
+                  (rm) => rm.id !== reminderId
+                ),
+              }
+            : r
+        )
+      );
+    } catch (err) {
+      console.error('Delete reminder error:', err);
+      throw err;
+    }
   };
 
   // Keep viewing registration in sync with state
   const currentViewReg = viewingRegistration
     ? (registrations.find((r) => r.id === viewingRegistration.id) ?? null)
     : null;
+  // Remove the entire error return block (lines 324-346) and replace with:
+  if (error) {
+    return (
+      <div className="space-y-6">
+        {/* Keep the header with Add button */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
+              Registrations & Finances
+            </h1>
+            <p className="text-muted-foreground">
+              Track business interest, seats (pax), package tier, invoices, and
+              payments for upcoming events.
+            </p>
+          </div>
+          <Button variant="hero" onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add registration
+          </Button>
+        </header>
 
+        {/* Error message card */}
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-start">
+            <div className="shrink-0">
+              <svg
+                className="h-6 w-6 text-red-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-lg font-semibold text-red-800">
+                Unable to Load Registration Data
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p>
+                  We encountered an issue while loading the registration data.
+                  This could be due to:
+                </p>
+                <ul className="mt-2 ml-5 list-disc space-y-1">
+                  <li>Network connectivity issues</li>
+                  <li>Temporary database unavailability</li>
+                  <li>No registrations exist in the system yet</li>
+                </ul>
+                <p className="mt-3">
+                  You can still add new registrations using the button above.
+                </p>
+              </div>
+              <div className="mt-4">
+                <Button
+                  onClick={() => window.location.reload()}
+                  variant="outline"
+                  size="sm"
+                  className="border-red-300 text-red-700 hover:bg-red-100"
+                >
+                  Try Loading Again
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Show empty table structure for consistency */}
+        <section className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="relative w-full md:max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search business, contact, invoice, event..."
+                className="pl-9"
+                disabled
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Select disabled>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue placeholder="Registration status" />
+                </SelectTrigger>
+              </Select>
+
+              <Select disabled>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Invoice status" />
+                </SelectTrigger>
+              </Select>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Business</TableHead>
+                  <TableHead className="hidden lg:table-cell">Event</TableHead>
+                  <TableHead>Package</TableHead>
+                  <TableHead className="hidden md:table-cell">Pax</TableHead>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead className="hidden md:table-cell">Total</TableHead>
+                  <TableHead className="hidden md:table-cell">Paid</TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Balance
+                  </TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Reminders
+                  </TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={10} className="py-12 text-center">
+                    <div className="mx-auto max-w-md">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                        <Users className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        No Registration Data Available
+                      </h3>
+                      <p className="mt-1 text-gray-600">
+                        Start by adding your first registration
+                      </p>
+                      <Button onClick={openCreate} className="mt-4">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Your First Registration
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </section>
+
+        {/* Show the form dialog (it will still work even if fetch fails) */}
+        <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
+          <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="flex flex-row items-center justify-between">
+              <div>
+                <DialogTitle>
+                  {editingId ? 'Edit registration' : 'Add registration'}
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  {editingId
+                    ? 'Update the registration details.'
+                    : 'Register a business for an upcoming event.'}
+                </DialogDescription>
+              </div>
+              <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogClose>
+            </DialogHeader>
+
+            <div className="mt-4">
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-5"
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="brandId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Business</FormLabel>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={loadingBrands || isSubmitting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select business" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {loadingBrands ? (
+                                <div className="flex items-center justify-center py-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                </div>
+                              ) : brands.length > 0 ? (
+                                brands.map((b) => (
+                                  // Use b._id if that's what's returned from your API
+                                  <SelectItem
+                                    key={b._id || b.id}
+                                    value={b._id || b.id}
+                                  >
+                                    {b.businessName}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <div className="py-2 px-3 text-sm text-gray-500">
+                                  No businesses available
+                                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="eventName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Event name</FormLabel>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={loadingBrands || isSubmitting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select business" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {loadingEvents ? (
+                                <div className="flex items-center justify-center py-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                </div>
+                              ) : events.length > 0 ? (
+                                events.map((e) => (
+                                  <SelectItem key={e._id} value={e._id}>
+                                    {e.title}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <div className="py-2 px-3 text-sm text-gray-500">
+                                  No businesses available
+                                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="packageTier"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Package tier</FormLabel>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={isSubmitting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select tier" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {packageTiers.map((t) => (
+                                <SelectItem key={t} value={t}>
+                                  {t} ({money.format(packageCatalog[t].price)})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="pax"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Pax (seats)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="registrationStatus"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registration status</FormLabel>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={isSubmitting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {registrationStatuses.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {s}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="invoiceStatus"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Invoice status</FormLabel>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={isSubmitting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {invoiceStatuses.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {s}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="invoiceNumber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Invoice #</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., INV-2024-012"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="dueDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Due date</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="amountTotal"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Total (KES)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="amountPaid"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Paid (KES)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              {...field}
+                              disabled={isSubmitting}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Any special requests, seating notes, etc."
+                            {...field}
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <DialogFooter className="mt-6">
+                    <DialogClose asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isSubmitting}
+                      >
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button
+                      type="submit"
+                      variant="hero"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : editingId ? (
+                        'Update Registration'
+                      ) : (
+                        'Create Registration'
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
+      <ToastContainer position="top-right" autoClose={3000} />
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
@@ -331,7 +1054,7 @@ export default function AdminEventFinance() {
             payments for upcoming events.
           </p>
         </div>
-        <Button variant="hero" onClick={openCreate}>
+        <Button variant="hero" onClick={openCreate} disabled={loading}>
           <Plus className="mr-2 h-4 w-4" />
           Add registration
         </Button>
@@ -339,79 +1062,92 @@ export default function AdminEventFinance() {
 
       {/* Dashboard Cards */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Expected revenue
-            </CardTitle>
-            <div className="rounded-lg bg-primary p-2">
-              <Banknote className="h-4 w-4 text-primary-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold text-foreground">
-              {money.format(totals.totalAmount)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              From all tracked registrations
-            </p>
-          </CardContent>
-        </Card>
+        {loading ? (
+          <>
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </>
+        ) : (
+          <>
+            <Card className="border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Expected revenue
+                </CardTitle>
+                <div className="rounded-lg bg-primary p-2">
+                  <Banknote className="h-4 w-4 text-primary-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-bold text-foreground">
+                  {money.format(totals.totalAmount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  From all tracked registrations
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Collected
-            </CardTitle>
-            <div className="rounded-lg bg-accent p-2">
-              <Banknote className="h-4 w-4 text-accent-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold text-foreground">
-              {money.format(totals.paidAmount)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Payments received to date
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Collected
+                </CardTitle>
+                <div className="rounded-lg bg-accent p-2">
+                  <Banknote className="h-4 w-4 text-accent-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-bold text-foreground">
+                  {money.format(totals.paidAmount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Payments received to date
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Outstanding
-            </CardTitle>
-            <div className="rounded-lg bg-muted p-2">
-              <CalendarClock className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold text-foreground">
-              {money.format(totals.outstanding)}
-            </p>
-            <p className="text-xs text-muted-foreground">Balance remaining</p>
-          </CardContent>
-        </Card>
+            <Card className="border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Outstanding
+                </CardTitle>
+                <div className="rounded-lg bg-muted p-2">
+                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-bold text-foreground">
+                  {money.format(totals.outstanding)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Balance remaining
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total pax
-            </CardTitle>
-            <div className="rounded-lg bg-muted p-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold text-foreground">
-              {totals.pax}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Seats requested/confirmed
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total pax
+                </CardTitle>
+                <div className="rounded-lg bg-muted p-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-bold text-foreground">
+                  {totals.pax}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Seats requested/confirmed
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </section>
 
       {/* Table */}
@@ -424,6 +1160,7 @@ export default function AdminEventFinance() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search business, contact, invoice, event..."
               className="pl-9"
+              disabled={loading}
             />
           </div>
 
@@ -431,6 +1168,7 @@ export default function AdminEventFinance() {
             <Select
               value={statusFilter}
               onValueChange={(v) => setStatusFilter(v)}
+              disabled={loading}
             >
               <SelectTrigger className="w-[190px]">
                 <SelectValue placeholder="Registration status" />
@@ -448,6 +1186,7 @@ export default function AdminEventFinance() {
             <Select
               value={invoiceFilter}
               onValueChange={(v) => setInvoiceFilter(v)}
+              disabled={loading}
             >
               <SelectTrigger className="w-[170px]">
                 <SelectValue placeholder="Invoice status" />
@@ -465,35 +1204,78 @@ export default function AdminEventFinance() {
         </div>
 
         <div className="mt-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Business</TableHead>
-                <TableHead className="hidden lg:table-cell">Event</TableHead>
-                <TableHead>Package</TableHead>
-                <TableHead className="hidden md:table-cell">Pax</TableHead>
-                <TableHead>Invoice</TableHead>
-                <TableHead className="hidden md:table-cell">Total</TableHead>
-                <TableHead className="hidden md:table-cell">Paid</TableHead>
-                <TableHead className="hidden lg:table-cell">Balance</TableHead>
-                <TableHead className="hidden lg:table-cell">
-                  Reminders
-                </TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
+          {loading ? (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={10}
-                    className="py-10 text-center text-sm text-muted-foreground"
-                  >
-                    No registrations found.
-                  </TableCell>
+                  <TableHead>Business</TableHead>
+                  <TableHead className="hidden lg:table-cell">Event</TableHead>
+                  <TableHead>Package</TableHead>
+                  <TableHead className="hidden md:table-cell">Pax</TableHead>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead className="hidden md:table-cell">Total</TableHead>
+                  <TableHead className="hidden md:table-cell">Paid</TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Balance
+                  </TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Reminders
+                  </TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                filtered.map((r) => {
+              </TableHeader>
+              <TableBody>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <TableRowSkeleton key={i} />
+                ))}
+              </TableBody>
+            </Table>
+          ) : filtered.length === 0 ? (
+            <div className="py-10 text-center">
+              <div className="mx-auto max-w-md">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <Users className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold">
+                  No registrations found
+                </h3>
+                <p className="text-muted-foreground mt-1">
+                  {query || statusFilter !== 'All' || invoiceFilter !== 'All'
+                    ? 'Try adjusting your search or filters'
+                    : 'Get started by adding your first registration'}
+                </p>
+                {!query &&
+                  statusFilter === 'All' &&
+                  invoiceFilter === 'All' && (
+                    <Button onClick={openCreate} className="mt-4">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add registration
+                    </Button>
+                  )}
+              </div>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Business</TableHead>
+                  <TableHead className="hidden lg:table-cell">Event</TableHead>
+                  <TableHead>Package</TableHead>
+                  <TableHead className="hidden md:table-cell">Pax</TableHead>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead className="hidden md:table-cell">Total</TableHead>
+                  <TableHead className="hidden md:table-cell">Paid</TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Balance
+                  </TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Reminders
+                  </TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((r) => {
                   const brand = brandsById.get(r.brandId);
                   const balance = Math.max(0, r.amountTotal - r.amountPaid);
                   const pendingReminders = r.reminders
@@ -639,27 +1421,35 @@ export default function AdminEventFinance() {
                       </TableCell>
                     </TableRow>
                   );
-                })
-              )}
-            </TableBody>
-          </Table>
+                })}
+              </TableBody>
+            </Table>
+          )}
         </div>
       </section>
 
-      {/* Detail Sheet with Tabs */}
-      <Sheet open={detailSheetOpen} onOpenChange={setDetailSheetOpen}>
-        <SheetContent className="w-full sm:max-w-2xl">
+      {/* Registration Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {currentViewReg && (
             <>
-              <SheetHeader>
-                <SheetTitle>
-                  {brandsById.get(currentViewReg.brandId)?.businessName ??
-                    'Registration'}
-                </SheetTitle>
-                <SheetDescription>{currentViewReg.eventName}</SheetDescription>
-              </SheetHeader>
+              <DialogHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <DialogTitle className="text-xl">
+                    {brandsById.get(currentViewReg.brandId)?.businessName ??
+                      'Registration'}
+                  </DialogTitle>
+                  <DialogDescription className="mt-1">
+                    {currentViewReg.eventName}
+                  </DialogDescription>
+                </div>
+                <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">Close</span>
+                </DialogClose>
+              </DialogHeader>
 
-              <Tabs defaultValue="overview" className="mt-6">
+              <Tabs defaultValue="overview" className="mt-4">
                 <TabsList className="w-full">
                   <TabsTrigger value="overview" className="flex-1">
                     Overview
@@ -793,107 +1583,151 @@ export default function AdminEventFinance() {
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => setDetailSheetOpen(false)}
-                    >
-                      Close
-                    </Button>
+                  <DialogFooter className="mt-6">
+                    <DialogClose asChild>
+                      <Button variant="outline">Close</Button>
+                    </DialogClose>
                     <Button
                       variant="hero"
                       onClick={() => {
-                        setDetailSheetOpen(false);
+                        setDetailDialogOpen(false);
                         openEdit(currentViewReg);
                       }}
                     >
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
                     </Button>
-                  </div>
+                  </DialogFooter>
                 </TabsContent>
 
                 <TabsContent value="reminders" className="mt-4">
                   <RemindersPanel
                     registrationId={currentViewReg.id}
                     reminders={currentViewReg.reminders || []}
-                    onAddReminder={addReminder}
-                    onUpdateReminder={updateReminder}
-                    onDeleteReminder={deleteReminder}
+                    onAddReminder={handleAddReminder}
+                    onUpdateReminder={handleUpdateReminder}
+                    onDeleteReminder={handleDeleteReminder}
                   />
+                  <DialogFooter className="mt-6">
+                    <DialogClose asChild>
+                      <Button variant="outline">Close</Button>
+                    </DialogClose>
+                  </DialogFooter>
                 </TabsContent>
               </Tabs>
             </>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      {/* Form Sheet */}
-      <Sheet open={formSheetOpen} onOpenChange={setFormSheetOpen}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>
-              {editingId ? 'Edit registration' : 'Add registration'}
-            </SheetTitle>
-            <SheetDescription>
-              {editingId
-                ? 'Update the registration details.'
-                : 'Register a business for an upcoming event.'}
-            </SheetDescription>
-          </SheetHeader>
+      {/* Registration Form Dialog */}
+      <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="flex flex-row items-center justify-between">
+            <div>
+              <DialogTitle>
+                {editingId ? 'Edit registration' : 'Add registration'}
+              </DialogTitle>
+              <DialogDescription className="mt-1">
+                {editingId
+                  ? 'Update the registration details.'
+                  : 'Register a business for an upcoming event.'}
+              </DialogDescription>
+            </div>
+            <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          </DialogHeader>
 
-          <div className="mt-6">
+          <div className="mt-4">
             <Form {...form}>
               <form
                 onSubmit={form.handleSubmit(onSubmit)}
                 className="space-y-5"
               >
-                <FormField
-                  control={form.control}
-                  name="brandId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Business</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select business" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {brands.map((b) => (
-                            <SelectItem key={b.id} value={b.id}>
-                              {b.businessName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="eventName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Event name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., SME Excellence Awards 2024"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
                 <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="brandId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Business</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={loadingBrands || isSubmitting}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select business" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {loadingBrands ? (
+                              <div className="flex items-center justify-center py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : brands.length > 0 ? (
+                              brands.map((b) => (
+                                // Use b._id if that's what's returned from your API
+                                <SelectItem
+                                  key={b._id || b.id}
+                                  value={b._id || b.id}
+                                >
+                                  {b.businessName}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="py-2 px-3 text-sm text-gray-500">
+                                No businesses available
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="eventName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Event name</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={loadingBrands || isSubmitting}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select business" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {loadingEvents ? (
+                              <div className="flex items-center justify-center py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : events.length > 0 ? (
+                              events.map((e) => (
+                                <SelectItem key={e._id} value={e._id}>
+                                  {e.title}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="py-2 px-3 text-sm text-gray-500">
+                                No businesses available
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="packageTier"
@@ -903,6 +1737,7 @@ export default function AdminEventFinance() {
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}
+                          disabled={isSubmitting}
                         >
                           <FormControl>
                             <SelectTrigger>
@@ -929,7 +1764,12 @@ export default function AdminEventFinance() {
                       <FormItem>
                         <FormLabel>Pax (seats)</FormLabel>
                         <FormControl>
-                          <Input type="number" inputMode="numeric" {...field} />
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -947,6 +1787,7 @@ export default function AdminEventFinance() {
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}
+                          disabled={isSubmitting}
                         >
                           <FormControl>
                             <SelectTrigger>
@@ -974,6 +1815,7 @@ export default function AdminEventFinance() {
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}
+                          disabled={isSubmitting}
                         >
                           <FormControl>
                             <SelectTrigger>
@@ -1002,7 +1844,11 @@ export default function AdminEventFinance() {
                       <FormItem>
                         <FormLabel>Invoice #</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., INV-2024-012" {...field} />
+                          <Input
+                            placeholder="e.g., INV-2024-012"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1015,7 +1861,11 @@ export default function AdminEventFinance() {
                       <FormItem>
                         <FormLabel>Due date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Input
+                            type="date"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1031,7 +1881,12 @@ export default function AdminEventFinance() {
                       <FormItem>
                         <FormLabel>Total (KES)</FormLabel>
                         <FormControl>
-                          <Input type="number" inputMode="numeric" {...field} />
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1044,7 +1899,12 @@ export default function AdminEventFinance() {
                       <FormItem>
                         <FormLabel>Paid (KES)</FormLabel>
                         <FormControl>
-                          <Input type="number" inputMode="numeric" {...field} />
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1062,6 +1922,7 @@ export default function AdminEventFinance() {
                         <Input
                           placeholder="Any special requests, seating notes, etc."
                           {...field}
+                          disabled={isSubmitting}
                         />
                       </FormControl>
                       <FormMessage />
@@ -1069,23 +1930,34 @@ export default function AdminEventFinance() {
                   )}
                 />
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setFormSheetOpen(false)}
-                  >
-                    Cancel
+                <DialogFooter className="mt-6">
+                  <DialogClose asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isSubmitting}
+                    >
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit" variant="hero" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : editingId ? (
+                      'Update Registration'
+                    ) : (
+                      'Create Registration'
+                    )}
                   </Button>
-                  <Button type="submit" variant="hero">
-                    Save
-                  </Button>
-                </div>
+                </DialogFooter>
               </form>
             </Form>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
