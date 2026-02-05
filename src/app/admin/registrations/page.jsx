@@ -17,6 +17,8 @@ import {
   Bell,
   X,
   Loader2,
+  PlusCircle,
+  CheckCircle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -144,6 +146,7 @@ function dateInputToIso(date) {
 const registrationSchema = z
   .object({
     brandId: z.string().min(1, 'Business is required'),
+    dueDate: z.string().optional().or(z.literal('Date is required')),
     eventName: z.string().trim().min(2, 'Event name is required').max(160),
     packageTier: z.enum(['Bronze', 'Silver', 'Gold']),
     pax: z.coerce.number().int().min(1).max(200),
@@ -449,7 +452,6 @@ export default function AdminEventFinance() {
         );
       } else {
         const response = await apiAddRegistration(registrationData);
-
         if (!response.success) {
           throw new Error(response.message);
         }
@@ -461,8 +463,8 @@ export default function AdminEventFinance() {
       setFormDialogOpen(false);
       form.reset(emptyFormValues());
     } catch (err) {
+      toast.error(`Error: ${err.message || 'Failed to save registration'}`);
       console.error('Submission error:', err);
-      // Handle error (show toast, etc.)
     } finally {
       setIsSubmitting(false);
     }
@@ -568,7 +570,11 @@ export default function AdminEventFinance() {
               payments for upcoming events.
             </p>
           </div>
-          <Button variant="hero" onClick={openCreate}>
+          <Button
+            variant="default"
+            onClick={openCreate}
+            className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 shadow-md hover:shadow-lg"
+          >
             <Plus className="mr-2 h-4 w-4" />
             Add registration
           </Button>
@@ -939,6 +945,7 @@ export default function AdminEventFinance() {
                           <FormControl>
                             <Input
                               type="date"
+                              required={true}
                               {...field}
                               disabled={isSubmitting}
                             />
@@ -1054,9 +1061,23 @@ export default function AdminEventFinance() {
             payments for upcoming events.
           </p>
         </div>
-        <Button variant="hero" onClick={openCreate} disabled={loading}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add registration
+        <Button
+          variant="hero"
+          onClick={openCreate}
+          disabled={loading}
+          className="relative bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-semibold px-8 py-4 rounded-xl shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+        >
+          {loading ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+              Adding...
+            </div>
+          ) : (
+            <>
+              <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-300" />
+              Add registration
+            </>
+          )}
         </Button>
       </header>
 
@@ -1946,16 +1967,30 @@ export default function AdminEventFinance() {
                       Cancel
                     </Button>
                   </DialogClose>
-                  <Button type="submit" variant="hero" disabled={isSubmitting}>
+                  <Button
+                    type="submit"
+                    variant="hero"
+                    disabled={isSubmitting}
+                    className="group relative w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold px-8 py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-80 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-xl overflow-hidden"
+                  >
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer" />
+
                     {isSubmitting ? (
-                      <>
+                      <div className="flex items-center justify-center relative z-10">
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Saving...
-                      </>
+                      </div>
                     ) : editingId ? (
-                      'Update Registration'
+                      <span className="relative z-10 flex items-center justify-center">
+                        <CheckCircle className="mr-2 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        Update Registration
+                      </span>
                     ) : (
-                      'Create Registration'
+                      <span className="relative z-10 flex items-center justify-center">
+                        <PlusCircle className="mr-2 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        Create Registration
+                      </span>
                     )}
                   </Button>
                 </DialogFooter>

@@ -493,25 +493,37 @@ export const deleteBrandAction = async (brandId) => {
 export const addRegistration = async (registrationData) => {
   'use server';
   await connect();
+
   try {
+    // 🔎 CHECK FOR DUPLICATE REGISTRATION
+    const existingRegistration = await Registration.findOne({
+      brandId: registrationData.brandId,
+      eventId: registrationData.eventName, // should be eventId
+    });
+
+    if (existingRegistration) {
+      return {
+        success: false,
+        message: 'This brand is already registered for this event',
+      };
+    }
+
+    // ✅ CREATE REGISTRATION
     const registration = await Registration.create({
       amountPaid: registrationData.amountPaid,
-
       amountTotal: registrationData.amountTotal,
       brandId: registrationData.brandId,
-      dueDate: registrationData.dueDate,
       eventId: registrationData.eventName,
-
+      dueDate: registrationData.dueDate,
       invoiceNumber: registrationData.invoiceNumber,
       invoiceStatus: registrationData.invoiceStatus,
-      notes: registrationData.notes,
-
       notes: registrationData.notes,
       packageTier: registrationData.packageTier,
       pax: registrationData.pax,
       registrationStatus: registrationData.registrationStatus,
-      recordedBy: registrationData.recordedBy || 'system', // or session user
+      recordedBy: registrationData.recordedBy || 'system',
     });
+
     return {
       success: true,
       data: registration,
@@ -526,6 +538,7 @@ export const addRegistration = async (registrationData) => {
     };
   }
 };
+
 export const fetchRegistrations = async () => {
   'use server';
   try {
