@@ -663,7 +663,146 @@ export const deleteReminder = async (reminderId) => {
     };
   }
 };
-
+export const createInvoice = async (invoiceData) => {
+  await connect();
+  try {
+    const invoice = await Invoice.create(invoiceData);
+    return {
+      success: true,
+      data: invoice,
+    };
+  } catch (error) {
+    console.error('❌ createInvoice error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to create invoice',
+    };
+  }
+};
+export const fetchInvoices = async () => {
+  await connect();
+  try {
+    const invoices = await Invoice.find()
+      .populate('brandId', 'businessName')
+      .lean();
+    return invoices;
+  } catch (error) {
+    console.error('❌ fetchInvoices error:', error);
+    throw new Error('Failed to fetch invoices');
+  }
+};
+export const updateInvoice = async (invoiceId, invoiceData) => {
+  await connect();
+  try {
+    const updatedInvoice = await Invoice.findByIdAndUpdate(
+      invoiceId,
+      invoiceData,
+      { new: true, runValidators: true }
+    );
+    if (!updatedInvoice) {
+      throw new Error('Invoice not found');
+    }
+    return {
+      success: true,
+      data: updatedInvoice,
+    };
+  } catch (error) {
+    console.error('❌ updateInvoice error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to update invoice',
+    };
+  }
+};
+export const recordPayment = async (paymentData) => {
+  await connect();
+  try {
+    const payment = await Payment.create(paymentData);
+    return {
+      success: true,
+      data: payment,
+    };
+  } catch (error) {
+    console.error('❌ recordPayment error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to record payment',
+    };
+  }
+};
+export const markInvoiceOverdue = async (invoiceId) => {
+  await connect();
+  try {
+    const updatedInvoice = await Invoice.findByIdAndUpdate(
+      invoiceId,
+      { status: 'Overdue' },
+      { new: true, runValidators: true }
+    );
+    if (!updatedInvoice) {
+      throw new Error('Invoice not found');
+    }
+    return updatedInvoice;
+  } catch (error) {
+    console.error('❌ markInvoiceOverdue error:', error);
+    throw error;
+  }
+};
+export const clearInvoice = async (invoiceId) => {
+  await connect();
+  try {
+    const updatedInvoice = await Invoice.findByIdAndUpdate(
+      invoiceId,
+      { status: 'Not sent' },
+      { new: true, runValidators: true }
+    );
+    if (!updatedInvoice) {
+      throw new Error('Invoice not found');
+    }
+    return updatedInvoice;
+  } catch (error) {
+    console.error('❌ clearInvoice error:', error);
+    throw error;
+  }
+};
+export const sendMessage = async (messageData) => {
+  await connect();
+  try {
+    const message = await Message.create(messageData);
+    return {
+      success: true,
+      data: message,
+    };
+  } catch (error) {
+    console.error('❌ sendMessage error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to send message',
+    };
+  }
+};
+export const fetchMessageHistory = async () => {
+  await connect();
+  try {
+    const messages = await Message.find()
+      .populate('brandId', 'businessName')
+      .lean();
+    return messages;
+  } catch (error) {
+    console.error('❌ fetchMessageHistory error:', error);
+    throw new Error('Failed to fetch message history');
+  }
+};
+export const fetchMessageTemplates = async () => {
+  await connect();
+  try {
+    const templates = await MessageTemplate.find().lean();
+    return templates;
+  } catch (error) {
+    console.error('❌ fetchMessageTemplates error:', error);
+    throw new Error('Failed to fetch message templates');
+  }
+};
+// ================= CONTRIBUTIONS =====================
 export const addpayment = async (memberData) => {
   await connect();
 
