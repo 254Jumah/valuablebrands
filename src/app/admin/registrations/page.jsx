@@ -6,19 +6,19 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from 'date-fns';
 import {
-  Banknote,
-  CalendarClock,
+  Users,
+  Calendar,
   Eye,
   Pencil,
   Plus,
   Search,
   Trash2,
-  Users,
-  Bell,
   X,
   Loader2,
-  PlusCircle,
-  CheckCircle,
+  Building,
+  Tag,
+  UserCheck,
+  FileText,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -68,27 +68,22 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Import backend API functions (you'll need to create these)
+// Import backend API functions
 import {
   fetchEventBrands as fetchBrands,
   addRegistration as apiAddRegistration,
   updateRegistration as apiUpdateRegistration,
   deleteRegistration as apiDeleteRegistration,
-  addReminder as apiAddReminder,
-  updateReminder as apiUpdateReminder,
-  deleteReminder as apiDeleteReminder,
   fetchRegistrations,
   fetchEvents,
 } from '@/app/lib/action';
 
 import { packageCatalog } from '@/data/mockEventFinance';
-import { RemindersPanel } from '@/components/layout/RemindersPanel';
 import useAuth from '@/app/hooks/useAuth';
 
 const registrationStatuses = [
@@ -98,32 +93,15 @@ const registrationStatuses = [
   'Attended',
   'Cancelled',
 ];
-const invoiceStatuses = ['Not sent', 'Sent', 'Part-paid', 'Paid', 'Overdue'];
+
 const packageTiers = ['Bronze', 'Silver', 'Gold'];
-
-const money = new Intl.NumberFormat('en-KE', {
-  style: 'currency',
-  currency: 'KES',
-  maximumFractionDigits: 0,
-});
-
-function badgeForInvoice(status) {
-  switch (status) {
-    case 'Paid':
-      return 'default';
-    case 'Part-paid':
-      return 'secondary';
-    case 'Overdue':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
-}
 
 function badgeForRegistration(status) {
   switch (status) {
     case 'Registered':
       return 'default';
+    case 'Attended':
+      return 'success';
     case 'Interested':
       return 'secondary';
     case 'Cancelled':
@@ -133,54 +111,28 @@ function badgeForRegistration(status) {
   }
 }
 
-function isoToDateInput(iso) {
-  if (!iso) return '';
-  return new Date(iso).toISOString().slice(0, 10);
-}
-
-function dateInputToIso(date) {
-  if (!date) return undefined;
-  return new Date(`${date}T00:00:00.000Z`).toISOString();
-}
-
-const registrationSchema = z
-  .object({
-    brandId: z.string().min(1, 'Business is required'),
-    dueDate: z.string().optional().or(z.literal('Date is required')),
-    eventName: z.string().trim().min(2, 'Event name is required').max(160),
-    packageTier: z.enum(['Bronze', 'Silver', 'Gold']),
-    pax: z.coerce.number().int().min(1).max(200),
-    registrationStatus: z.enum([
-      'Lead',
-      'Interested',
-      'Registered',
-      'Attended',
-      'Cancelled',
-    ]),
-    invoiceStatus: z.enum(['Not sent', 'Sent', 'Part-paid', 'Paid', 'Overdue']),
-    invoiceNumber: z.string().trim().max(50).optional().or(z.literal('')),
-    amountTotal: z.coerce.number().min(0).max(100_000_000),
-    amountPaid: z.coerce.number().min(0).max(100_000_000),
-    dueDate: z.string().optional().or(z.literal('')),
-    notes: z.string().trim().max(1000).optional().or(z.literal('')),
-  })
-  .refine((v) => v.amountPaid <= v.amountTotal, {
-    message: 'Paid amount cannot exceed total',
-    path: ['amountPaid'],
-  });
+const registrationSchema = z.object({
+  brandId: z.string().min(1, 'Business is required'),
+  eventId: z.string().min(1, 'Event is required'),
+  packageTier: z.enum(['Bronze', 'Silver', 'Gold']),
+  pax: z.coerce.number().int().min(1).max(200),
+  registrationStatus: z.enum([
+    'Lead',
+    'Interested',
+    'Registered',
+    'Attended',
+    'Cancelled',
+  ]),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+});
 
 function emptyFormValues() {
   return {
     brandId: '',
-    eventName: 'SME Excellence Awards 2024',
+    eventId: '',
     packageTier: 'Bronze',
     pax: packageCatalog.Bronze.includedPax,
     registrationStatus: 'Interested',
-    invoiceStatus: 'Not sent',
-    invoiceNumber: '',
-    amountTotal: packageCatalog.Bronze.price,
-    amountPaid: 0,
-    dueDate: '',
     notes: '',
   };
 }
@@ -188,15 +140,10 @@ function emptyFormValues() {
 function registrationToFormValues(r) {
   return {
     brandId: r.brandId,
-    eventName: r.eventName,
+    eventId: r.eventId,
     packageTier: r.packageTier,
     pax: r.pax,
     registrationStatus: r.registrationStatus,
-    invoiceStatus: r.invoiceStatus,
-    invoiceNumber: r.invoiceNumber ?? '',
-    amountTotal: r.amountTotal,
-    amountPaid: r.amountPaid,
-    dueDate: isoToDateInput(r.dueDate),
     notes: r.notes ?? '',
   };
 }
@@ -227,31 +174,16 @@ const TableRowSkeleton = () => (
       <Skeleton className="h-4 w-40" />
     </TableCell>
     <TableCell>
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-3 w-16" />
-      </div>
+      <Skeleton className="h-4 w-20" />
     </TableCell>
-    <TableCell className="hidden md:table-cell">
+    <TableCell>
       <Skeleton className="h-4 w-12" />
     </TableCell>
     <TableCell>
-      <div className="space-y-2">
-        <Skeleton className="h-6 w-16 rounded-full" />
-        <Skeleton className="h-3 w-24" />
-      </div>
+      <Skeleton className="h-6 w-24 rounded-full" />
     </TableCell>
-    <TableCell className="hidden md:table-cell">
-      <Skeleton className="h-4 w-20" />
-    </TableCell>
-    <TableCell className="hidden md:table-cell">
-      <Skeleton className="h-4 w-20" />
-    </TableCell>
-    <TableCell className="hidden lg:table-cell">
-      <Skeleton className="h-4 w-20" />
-    </TableCell>
-    <TableCell className="hidden lg:table-cell">
-      <Skeleton className="h-6 w-10 rounded-full" />
+    <TableCell>
+      <Skeleton className="h-4 w-24" />
     </TableCell>
     <TableCell>
       <div className="flex justify-end gap-2">
@@ -263,19 +195,16 @@ const TableRowSkeleton = () => (
   </TableRow>
 );
 
-export default function AdminEventFinance() {
+export default function AdminRegistrations() {
   const { email, name, role, id } = useAuth();
   const [loading, setLoading] = useState(true);
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [error, setError] = useState(null);
   const [brands, setBrands] = useState([]);
-
   const [registrations, setRegistrations] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [invoiceFilter, setInvoiceFilter] = useState('All');
 
   // Dialog states
   const [formDialogOpen, setFormDialogOpen] = useState(false);
@@ -289,17 +218,22 @@ export default function AdminEventFinance() {
     return new Map(brands.map((b) => [b._id, b]));
   }, [brands]);
 
+  const eventsById = useMemo(() => {
+    return new Map(events.map((e) => [e._id, e]));
+  }, [events]);
+
   const form = useForm({
     resolver: zodResolver(registrationSchema),
     defaultValues: emptyFormValues(),
     mode: 'onBlur',
   });
+
+  // Fetch brands
   const getBrandsData = async () => {
     setLoading(true);
     setLoadingBrands(true);
     try {
       const data = await fetchBrands();
-
       setBrands(data || []);
     } catch (error) {
       setError('Failed to load brands data');
@@ -309,12 +243,9 @@ export default function AdminEventFinance() {
       setLoadingBrands(false);
     }
   };
-  useEffect(() => {
-    getBrandsData();
-  }, []);
 
+  // Fetch events
   const getEventsData = async () => {
-    setLoading(true);
     setLoadingEvents(true);
     try {
       const data = await fetchEvents();
@@ -323,44 +254,39 @@ export default function AdminEventFinance() {
       setError('Failed to load events data');
       toast.error('Failed to load events data');
     } finally {
-      setLoading(false);
       setLoadingEvents(false);
     }
   };
-  useEffect(() => {
-    getEventsData();
-  }, []);
-  // Fetch data on component mount
+
+  // Fetch registrations
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        setLoadingBrands(true);
-
         const registrationsData = await fetchRegistrations();
-        console.log('Fetched registrations:', registrationsData);
         setRegistrations(registrationsData || []);
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setError('Failed to load data. Please try again.');
       } finally {
         setLoading(false);
-        setLoadingBrands(false);
       }
     };
 
     fetchData();
+    getBrandsData();
+    getEventsData();
   }, []);
 
-  // Auto-fill pricing/pax based on tier when creating
+  // Auto-fill pax based on tier when creating (not editing)
   const tier = form.watch('packageTier');
   useEffect(() => {
     if (editingId) return;
     const cfg = packageCatalog[tier];
-    form.setValue('amountTotal', cfg?.price || 0, { shouldValidate: true });
     form.setValue('pax', cfg?.includedPax, { shouldValidate: true });
   }, [tier, editingId, form]);
 
+  // Filter registrations
   const filtered = useMemo(() => {
     if (loading) return [];
 
@@ -369,37 +295,40 @@ export default function AdminEventFinance() {
       .filter((r) =>
         statusFilter === 'All' ? true : r.registrationStatus === statusFilter
       )
-      .filter((r) =>
-        invoiceFilter === 'All' ? true : r.invoiceStatus === invoiceFilter
-      )
       .filter((r) => {
         if (!q) return true;
         const brand = brandsById.get(r.brandId);
+        const event = eventsById.get(r.eventId);
         const haystack = [
-          r.eventName,
+          event?.title,
           brand?.businessName,
           brand?.category,
           brand?.primaryContact?.name,
           brand?.primaryContact?.email,
           r.packageTier,
-          r.invoiceNumber,
+          r.notes,
         ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
         return haystack.includes(q);
       });
-  }, [registrations, statusFilter, invoiceFilter, query, brandsById, loading]);
+  }, [registrations, statusFilter, query, brandsById, eventsById, loading]);
 
-  const totals = useMemo(() => {
-    if (loading)
-      return { totalAmount: 0, paidAmount: 0, outstanding: 0, pax: 0 };
+  // Registration statistics
+  const stats = useMemo(() => {
+    if (loading) return { total: 0, registered: 0, attended: 0, totalPax: 0 };
 
-    const totalAmount = registrations.reduce((s, r) => s + r.amountTotal, 0);
-    const paidAmount = registrations.reduce((s, r) => s + r.amountPaid, 0);
-    const pax = registrations.reduce((s, r) => s + r.pax, 0);
-    const outstanding = Math.max(0, totalAmount - paidAmount);
-    return { totalAmount, paidAmount, outstanding, pax };
+    const total = registrations.length;
+    const registered = registrations.filter(
+      (r) => r.registrationStatus === 'Registered'
+    ).length;
+    const attended = registrations.filter(
+      (r) => r.registrationStatus === 'Attended'
+    ).length;
+    const totalPax = registrations.reduce((s, r) => s + r.pax, 0);
+
+    return { total, registered, attended, totalPax };
   }, [registrations, loading]);
 
   const openCreate = () => {
@@ -409,7 +338,7 @@ export default function AdminEventFinance() {
   };
 
   const openEdit = (r) => {
-    setEditingId(r.id);
+    setEditingId(r._id);
     form.reset(registrationToFormValues(r));
     setFormDialogOpen(true);
   };
@@ -422,21 +351,12 @@ export default function AdminEventFinance() {
   const onSubmit = async (values) => {
     setIsSubmitting(true);
     try {
-      const dueDateIso = values.dueDate
-        ? dateInputToIso(values.dueDate)
-        : undefined;
-
       const registrationData = {
         brandId: values.brandId,
-        eventName: values.eventName,
+        eventId: values.eventId,
         packageTier: values.packageTier,
         pax: values.pax,
         registrationStatus: values.registrationStatus,
-        invoiceStatus: values.invoiceStatus,
-        invoiceNumber: values.invoiceNumber || undefined,
-        amountTotal: values.amountTotal,
-        amountPaid: values.amountPaid,
-        dueDate: dueDateIso,
         notes: values.notes || undefined,
         recordedBy: name,
       };
@@ -448,8 +368,9 @@ export default function AdminEventFinance() {
           registrationData
         );
         setRegistrations((prev) =>
-          prev.map((r) => (r.id === editingId ? updatedRegistration : r))
+          prev.map((r) => (r._id === editingId ? updatedRegistration : r))
         );
+        toast.success('Registration updated successfully');
       } else {
         const response = await apiAddRegistration(registrationData);
         if (!response.success) {
@@ -473,114 +394,40 @@ export default function AdminEventFinance() {
   const handleDelete = async (id) => {
     try {
       await apiDeleteRegistration(id);
-      setRegistrations((prev) => prev.filter((r) => r.id !== id));
+      setRegistrations((prev) => prev.filter((r) => r._id !== id));
+      toast.success('Registration deleted successfully');
     } catch (err) {
+      toast.error('Failed to delete registration');
       console.error('Delete error:', err);
-      // Handle error
     }
   };
 
-  // API wrapper functions for reminders (to be implemented)
-  const handleAddReminder = async (registrationId, reminderData) => {
-    try {
-      const newReminder = await apiAddReminder(registrationId, reminderData);
-      // Update local state
-      setRegistrations((prev) =>
-        prev.map((r) =>
-          r.id === registrationId
-            ? { ...r, reminders: [...(r.reminders || []), newReminder] }
-            : r
-        )
-      );
-      return newReminder;
-    } catch (err) {
-      console.error('Add reminder error:', err);
-      throw err;
-    }
-  };
-
-  const handleUpdateReminder = async (
-    registrationId,
-    reminderId,
-    reminderData
-  ) => {
-    try {
-      const updatedReminder = await apiUpdateReminder(
-        registrationId,
-        reminderId,
-        reminderData
-      );
-      // Update local state
-      setRegistrations((prev) =>
-        prev.map((r) =>
-          r.id === registrationId
-            ? {
-                ...r,
-                reminders: (r.reminders || []).map((rm) =>
-                  rm.id === reminderId ? updatedReminder : rm
-                ),
-              }
-            : r
-        )
-      );
-    } catch (err) {
-      console.error('Update reminder error:', err);
-      throw err;
-    }
-  };
-
-  const handleDeleteReminder = async (registrationId, reminderId) => {
-    try {
-      await apiDeleteReminder(registrationId, reminderId);
-      // Update local state
-      setRegistrations((prev) =>
-        prev.map((r) =>
-          r.id === registrationId
-            ? {
-                ...r,
-                reminders: (r.reminders || []).filter(
-                  (rm) => rm.id !== reminderId
-                ),
-              }
-            : r
-        )
-      );
-    } catch (err) {
-      console.error('Delete reminder error:', err);
-      throw err;
-    }
-  };
-
-  // Keep viewing registration in sync with state
   const currentViewReg = viewingRegistration
-    ? (registrations.find((r) => r.id === viewingRegistration.id) ?? null)
+    ? (registrations.find((r) => r._id === viewingRegistration._id) ?? null)
     : null;
-  // Remove the entire error return block (lines 324-346) and replace with:
+
   if (error) {
     return (
       <div className="space-y-6">
-        {/* Keep the header with Add button */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
-              Registrations & Finances
+              Event Registrations
             </h1>
             <p className="text-muted-foreground">
-              Track business interest, seats (pax), package tier, invoices, and
-              payments for upcoming events.
+              Manage business registrations for upcoming events.
             </p>
           </div>
           <Button
             variant="default"
             onClick={openCreate}
-            className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 shadow-md hover:shadow-lg"
+            className="bg-primary hover:bg-primary/90 text-white"
           >
             <Plus className="mr-2 h-4 w-4" />
             Add registration
           </Button>
         </header>
 
-        {/* Error message card */}
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <div className="flex items-start">
             <div className="shrink-0">
@@ -602,20 +449,10 @@ export default function AdminEventFinance() {
               <h3 className="text-lg font-semibold text-red-800">
                 Unable to Load Registration Data
               </h3>
-              <div className="mt-2 text-sm text-red-700">
-                <p>
-                  We encountered an issue while loading the registration data.
-                  This could be due to:
-                </p>
-                <ul className="mt-2 ml-5 list-disc space-y-1">
-                  <li>Network connectivity issues</li>
-                  <li>Temporary database unavailability</li>
-                  <li>No registrations exist in the system yet</li>
-                </ul>
-                <p className="mt-3">
-                  You can still add new registrations using the button above.
-                </p>
-              </div>
+              <p className="mt-2 text-sm text-red-700">
+                Failed to load registration data. Please try again or add new
+                registrations.
+              </p>
               <div className="mt-4">
                 <Button
                   onClick={() => window.location.reload()}
@@ -629,459 +466,36 @@ export default function AdminEventFinance() {
             </div>
           </div>
         </div>
-
-        {/* Show empty table structure for consistency */}
-        <section className="rounded-xl border border-border bg-card p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full md:max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search business, contact, invoice, event..."
-                className="pl-9"
-                disabled
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Select disabled>
-                <SelectTrigger className="w-[190px]">
-                  <SelectValue placeholder="Registration status" />
-                </SelectTrigger>
-              </Select>
-
-              <Select disabled>
-                <SelectTrigger className="w-[170px]">
-                  <SelectValue placeholder="Invoice status" />
-                </SelectTrigger>
-              </Select>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Business</TableHead>
-                  <TableHead className="hidden lg:table-cell">Event</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead className="hidden md:table-cell">Pax</TableHead>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead className="hidden md:table-cell">Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Paid</TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Balance
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Reminders
-                  </TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell colSpan={10} className="py-12 text-center">
-                    <div className="mx-auto max-w-md">
-                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
-                        <Users className="h-8 w-8 text-gray-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        No Registration Data Available
-                      </h3>
-                      <p className="mt-1 text-gray-600">
-                        Start by adding your first registration
-                      </p>
-                      <Button onClick={openCreate} className="mt-4">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Your First Registration
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-        </section>
-
-        {/* Show the form dialog (it will still work even if fetch fails) */}
-        <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-          <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader className="flex flex-row items-center justify-between">
-              <div>
-                <DialogTitle>
-                  {editingId ? 'Edit registration' : 'Add registration'}
-                </DialogTitle>
-                <DialogDescription className="mt-1">
-                  {editingId
-                    ? 'Update the registration details.'
-                    : 'Register a business for an upcoming event.'}
-                </DialogDescription>
-              </div>
-              <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close</span>
-              </DialogClose>
-            </DialogHeader>
-
-            <div className="mt-4">
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-5"
-                >
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="brandId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Business</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={loadingBrands || isSubmitting}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select business" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingBrands ? (
-                                <div className="flex items-center justify-center py-2">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                </div>
-                              ) : brands.length > 0 ? (
-                                brands.map((b) => (
-                                  // Use b._id if that's what's returned from your API
-                                  <SelectItem
-                                    key={b._id || b.id}
-                                    value={b._id || b.id}
-                                  >
-                                    {b.businessName}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <div className="py-2 px-3 text-sm text-gray-500">
-                                  No businesses available
-                                </div>
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="eventName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Event name</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={loadingBrands || isSubmitting}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select business" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingEvents ? (
-                                <div className="flex items-center justify-center py-2">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                </div>
-                              ) : events.length > 0 ? (
-                                events.map((e) => (
-                                  <SelectItem key={e._id} value={e._id}>
-                                    {e.title}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <div className="py-2 px-3 text-sm text-gray-500">
-                                  No businesses available
-                                </div>
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="packageTier"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Package tier</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={isSubmitting}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select tier" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {packageTiers.map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t} ({money.format(packageCatalog[t].price)})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="pax"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Pax (seats)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              inputMode="numeric"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="registrationStatus"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registration status</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={isSubmitting}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {registrationStatuses.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="invoiceStatus"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Invoice status</FormLabel>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={isSubmitting}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {invoiceStatuses.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="invoiceNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Invoice #</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="e.g., INV-2024-012"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="dueDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Due date</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="date"
-                              required={true}
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="amountTotal"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Total (KES)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              inputMode="numeric"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="amountPaid"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Paid (KES)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              inputMode="numeric"
-                              {...field}
-                              disabled={isSubmitting}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Any special requests, seating notes, etc."
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <DialogFooter className="mt-6">
-                    <DialogClose asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={isSubmitting}
-                      >
-                        Cancel
-                      </Button>
-                    </DialogClose>
-                    <Button
-                      type="submit"
-                      variant="hero"
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : editingId ? (
-                        'Update Registration'
-                      ) : (
-                        'Create Registration'
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </Form>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     );
   }
+
   return (
     <div className="space-y-6">
       <ToastContainer position="top-right" autoClose={3000} />
+
+      {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
-            Registrations & Finances
+            Event Registrations
           </h1>
           <p className="text-muted-foreground">
-            Track business interest, seats (pax), package tier, invoices, and
-            payments for upcoming events.
+            Manage business registrations, package tiers, and attendance status.
           </p>
         </div>
         <Button
-          variant="hero"
+          variant="default"
           onClick={openCreate}
           disabled={loading}
-          className="relative bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-semibold px-8 py-4 rounded-xl shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+          className="bg-primary hover:bg-primary/90 text-white"
         >
-          {loading ? (
-            <div className="flex items-center">
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-              Adding...
-            </div>
-          ) : (
-            <>
-              <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-300" />
-              Add registration
-            </>
-          )}
+          <Plus className="mr-2 h-4 w-4" />
+          Add registration
         </Button>
       </header>
 
-      {/* Dashboard Cards */}
+      {/* Dashboard Cards - Registration Focused */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           <>
@@ -1095,18 +509,18 @@ export default function AdminEventFinance() {
             <Card className="border-border/50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Expected revenue
+                  Total Registrations
                 </CardTitle>
-                <div className="rounded-lg bg-primary p-2">
-                  <Banknote className="h-4 w-4 text-primary-foreground" />
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Users className="h-4 w-4 text-primary" />
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-bold text-foreground">
-                  {money.format(totals.totalAmount)}
+                  {stats.total}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  From all tracked registrations
+                  All registration records
                 </p>
               </CardContent>
             </Card>
@@ -1114,18 +528,18 @@ export default function AdminEventFinance() {
             <Card className="border-border/50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Collected
+                  Confirmed
                 </CardTitle>
-                <div className="rounded-lg bg-accent p-2">
-                  <Banknote className="h-4 w-4 text-accent-foreground" />
+                <div className="rounded-lg bg-green-100 p-2">
+                  <UserCheck className="h-4 w-4 text-green-600" />
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-bold text-foreground">
-                  {money.format(totals.paidAmount)}
+                  {stats.registered}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Payments received to date
+                  Status: Registered
                 </p>
               </CardContent>
             </Card>
@@ -1133,18 +547,18 @@ export default function AdminEventFinance() {
             <Card className="border-border/50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Outstanding
+                  Attended
                 </CardTitle>
-                <div className="rounded-lg bg-muted p-2">
-                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                <div className="rounded-lg bg-blue-100 p-2">
+                  <Calendar className="h-4 w-4 text-blue-600" />
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-bold text-foreground">
-                  {money.format(totals.outstanding)}
+                  {stats.attended}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Balance remaining
+                  Status: Attended
                 </p>
               </CardContent>
             </Card>
@@ -1152,18 +566,18 @@ export default function AdminEventFinance() {
             <Card className="border-border/50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total pax
+                  Total Pax
                 </CardTitle>
-                <div className="rounded-lg bg-muted p-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                <div className="rounded-lg bg-purple-100 p-2">
+                  <Users className="h-4 w-4 text-purple-600" />
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-bold text-foreground">
-                  {totals.pax}
+                  {stats.totalPax}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Seats requested/confirmed
+                  Seats registered
                 </p>
               </CardContent>
             </Card>
@@ -1171,7 +585,7 @@ export default function AdminEventFinance() {
         )}
       </section>
 
-      {/* Table */}
+      {/* Registrations Table */}
       <section className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="relative w-full md:max-w-md">
@@ -1179,42 +593,24 @@ export default function AdminEventFinance() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search business, contact, invoice, event..."
+              placeholder="Search business, event, package..."
               className="pl-9"
               disabled={loading}
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <Select
               value={statusFilter}
               onValueChange={(v) => setStatusFilter(v)}
               disabled={loading}
             >
-              <SelectTrigger className="w-[190px]">
-                <SelectValue placeholder="Registration status" />
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All">All registrations</SelectItem>
+                <SelectItem value="All">All statuses</SelectItem>
                 {registrationStatuses.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={invoiceFilter}
-              onValueChange={(v) => setInvoiceFilter(v)}
-              disabled={loading}
-            >
-              <SelectTrigger className="w-[170px]">
-                <SelectValue placeholder="Invoice status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All invoices</SelectItem>
-                {invoiceStatuses.map((s) => (
                   <SelectItem key={s} value={s}>
                     {s}
                   </SelectItem>
@@ -1230,18 +626,11 @@ export default function AdminEventFinance() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Business</TableHead>
-                  <TableHead className="hidden lg:table-cell">Event</TableHead>
+                  <TableHead>Event</TableHead>
                   <TableHead>Package</TableHead>
-                  <TableHead className="hidden md:table-cell">Pax</TableHead>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead className="hidden md:table-cell">Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Paid</TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Balance
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Reminders
-                  </TableHead>
+                  <TableHead>Pax</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1261,18 +650,16 @@ export default function AdminEventFinance() {
                   No registrations found
                 </h3>
                 <p className="text-muted-foreground mt-1">
-                  {query || statusFilter !== 'All' || invoiceFilter !== 'All'
+                  {query || statusFilter !== 'All'
                     ? 'Try adjusting your search or filters'
                     : 'Get started by adding your first registration'}
                 </p>
-                {!query &&
-                  statusFilter === 'All' &&
-                  invoiceFilter === 'All' && (
-                    <Button onClick={openCreate} className="mt-4">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add registration
-                    </Button>
-                  )}
+                {!query && statusFilter === 'All' && (
+                  <Button onClick={openCreate} className="mt-4">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add registration
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -1280,28 +667,18 @@ export default function AdminEventFinance() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Business</TableHead>
-                  <TableHead className="hidden lg:table-cell">Event</TableHead>
+                  <TableHead>Event</TableHead>
                   <TableHead>Package</TableHead>
-                  <TableHead className="hidden md:table-cell">Pax</TableHead>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead className="hidden md:table-cell">Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Paid</TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Balance
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Reminders
-                  </TableHead>
+                  <TableHead>Pax</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((r) => {
                   const brand = brandsById.get(r.brandId);
-                  const balance = Math.max(0, r.amountTotal - r.amountPaid);
-                  const pendingReminders = r.reminders
-                    ? r.reminders.filter((rm) => rm.status === 'Planned').length
-                    : 0;
+                  const event = eventsById.get(r.eventId);
 
                   return (
                     <TableRow key={r._id}>
@@ -1313,18 +690,11 @@ export default function AdminEventFinance() {
                                 r.brandId.businessName) ||
                               'Unknown Business'}
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge
-                              variant={badgeForRegistration(
-                                r.registrationStatus
-                              )}
-                            >
-                              {r.registrationStatus}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {brand?.primaryContact?.phone ?? ''}
-                            </span>
-                          </div>
+                          {brand?.primaryContact?.name && (
+                            <div className="text-xs text-muted-foreground">
+                              {brand.primaryContact.name}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
@@ -1336,63 +706,24 @@ export default function AdminEventFinance() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium text-foreground">
-                            {r.packageTier}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Incl: {packageCatalog[r.packageTier].includedPax}{' '}
-                            pax
-                          </div>
-                        </div>
+                        <Badge variant="outline" className="capitalize">
+                          {r.packageTier}
+                        </Badge>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {r.pax}
+                      <TableCell>{r.pax}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={badgeForRegistration(r.registrationStatus)}
+                        >
+                          {r.registrationStatus}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-1">
-                          <Badge variant={badgeForInvoice(r.invoiceStatus)}>
-                            {r.invoiceStatus}
-                          </Badge>
-                          <div className="text-xs text-muted-foreground">
-                            {r.invoiceNumber ? r.invoiceNumber : '—'}
-                            {r.dueDate ? (
-                              <span className="ml-2">
-                                Due {format(new Date(r.dueDate), 'MMM d')}
-                              </span>
-                            ) : null}
-                          </div>
+                        <div className="text-sm text-muted-foreground">
+                          {r?.createdAt
+                            ? format(new Date(r.createdAt), 'MMM d, yyyy')
+                            : 'N/A'}
                         </div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {money.format(r.amountTotal)}
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {money.format(r.amountPaid)}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <span
-                          className={cn(
-                            'text-sm',
-                            balance > 0
-                              ? 'text-foreground'
-                              : 'text-muted-foreground'
-                          )}
-                        >
-                          {money.format(balance)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        {pendingReminders > 0 ? (
-                          <Badge variant="secondary" className="gap-1">
-                            <Bell className="h-3 w-3" />
-                            {pendingReminders}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -1430,14 +761,14 @@ export default function AdminEventFinance() {
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently remove this registration
-                                  and all associated reminders.
+                                  from the system.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => handleDelete(r.id)}
+                                  onClick={() => handleDelete(r._id)}
                                 >
                                   Delete
                                 </AlertDialogAction>
@@ -1457,191 +788,102 @@ export default function AdminEventFinance() {
 
       {/* Registration Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           {currentViewReg && (
             <>
               <DialogHeader className="flex flex-row items-center justify-between">
                 <div>
                   <DialogTitle className="text-xl">
-                    {brandsById.get(currentViewReg.brandId)?.businessName ??
-                      'Registration'}
+                    Registration Details
                   </DialogTitle>
                   <DialogDescription className="mt-1">
-                    {currentViewReg.eventName}
+                    View registration information
                   </DialogDescription>
                 </div>
-                <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100">
                   <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>
                 </DialogClose>
               </DialogHeader>
 
-              <Tabs defaultValue="overview" className="mt-4">
-                <TabsList className="w-full">
-                  <TabsTrigger value="overview" className="flex-1">
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger value="reminders" className="flex-1">
-                    Reminders
-                    {currentViewReg.reminders &&
-                      currentViewReg.reminders.filter(
-                        (rm) => rm.status === 'Planned'
-                      ).length > 0 && (
-                        <Badge variant="secondary" className="ml-2">
-                          {
-                            currentViewReg.reminders.filter(
-                              (rm) => rm.status === 'Planned'
-                            ).length
-                          }
-                        </Badge>
-                      )}
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="mt-4 space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Package</p>
-                      <p className="font-medium text-foreground">
-                        {currentViewReg.packageTier}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {packageCatalog[
-                          currentViewReg.packageTier
-                        ].benefits.join(' • ')}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">
-                        Pax (seats)
-                      </p>
-                      <p className="font-medium text-foreground">
-                        {currentViewReg.pax}
-                      </p>
-                    </div>
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Business</p>
+                    <p className="font-medium">
+                      {brandsById.get(currentViewReg.brandId)?.businessName ||
+                        'Unknown'}
+                    </p>
                   </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">
-                        Registration status
-                      </p>
-                      <Badge
-                        variant={badgeForRegistration(
-                          currentViewReg.registrationStatus
-                        )}
-                      >
-                        {currentViewReg.registrationStatus}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">
-                        Invoice status
-                      </p>
-                      <Badge
-                        variant={badgeForInvoice(currentViewReg.invoiceStatus)}
-                      >
-                        {currentViewReg.invoiceStatus}
-                      </Badge>
-                    </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Event</p>
+                    <p className="font-medium">
+                      {eventsById.get(currentViewReg.eventId)?.title ||
+                        'Unknown'}
+                    </p>
                   </div>
+                </div>
 
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <h4 className="mb-3 text-sm font-semibold text-foreground">
-                      Financial summary
-                    </h4>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total</p>
-                        <p className="font-display text-lg font-bold text-foreground">
-                          {money.format(currentViewReg.amountTotal)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Paid</p>
-                        <p className="font-display text-lg font-bold text-foreground">
-                          {money.format(currentViewReg.amountPaid)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Balance</p>
-                        <p
-                          className={cn(
-                            'font-display text-lg font-bold',
-                            currentViewReg.amountTotal -
-                              currentViewReg.amountPaid >
-                              0
-                              ? 'text-destructive'
-                              : 'text-foreground'
-                          )}
-                        >
-                          {money.format(
-                            Math.max(
-                              0,
-                              currentViewReg.amountTotal -
-                                currentViewReg.amountPaid
-                            )
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    {currentViewReg.invoiceNumber && (
-                      <p className="mt-3 text-sm text-muted-foreground">
-                        Invoice: {currentViewReg.invoiceNumber}
-                        {currentViewReg.dueDate && (
-                          <span className="ml-2">
-                            • Due{' '}
-                            {format(
-                              new Date(currentViewReg.dueDate),
-                              'MMM d, yyyy'
-                            )}
-                          </span>
-                        )}
-                      </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Package</p>
+                    <Badge variant="outline" className="capitalize">
+                      {currentViewReg.packageTier}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Pax</p>
+                    <p className="font-medium">{currentViewReg.pax}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <Badge
+                    variant={badgeForRegistration(
+                      currentViewReg.registrationStatus
                     )}
+                  >
+                    {currentViewReg.registrationStatus}
+                  </Badge>
+                </div>
+
+                {currentViewReg.notes && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Notes</p>
+                    <p className="text-sm mt-1 p-2 bg-muted rounded">
+                      {currentViewReg.notes}
+                    </p>
                   </div>
+                )}
 
-                  {currentViewReg.notes && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Notes</p>
-                      <p className="text-sm text-foreground">
-                        {currentViewReg.notes}
-                      </p>
-                    </div>
-                  )}
+                <div className="text-xs text-muted-foreground">
+                  <p>Recorded by: {currentViewReg.recordedBy || 'System'}</p>
+                  <p>
+                    Created:{' '}
+                    {format(new Date(currentViewReg.createdAt), 'PPpp')}
+                  </p>
+                  <p>
+                    Updated:{' '}
+                    {format(new Date(currentViewReg.updatedAt), 'PPpp')}
+                  </p>
+                </div>
 
-                  <DialogFooter className="mt-6">
-                    <DialogClose asChild>
-                      <Button variant="outline">Close</Button>
-                    </DialogClose>
-                    <Button
-                      variant="hero"
-                      onClick={() => {
-                        setDetailDialogOpen(false);
-                        openEdit(currentViewReg);
-                      }}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  </DialogFooter>
-                </TabsContent>
-
-                <TabsContent value="reminders" className="mt-4">
-                  <RemindersPanel
-                    registrationId={currentViewReg.id}
-                    reminders={currentViewReg.reminders || []}
-                    onAddReminder={handleAddReminder}
-                    onUpdateReminder={handleUpdateReminder}
-                    onDeleteReminder={handleDeleteReminder}
-                  />
-                  <DialogFooter className="mt-6">
-                    <DialogClose asChild>
-                      <Button variant="outline">Close</Button>
-                    </DialogClose>
-                  </DialogFooter>
-                </TabsContent>
-              </Tabs>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                  </DialogClose>
+                  <Button
+                    onClick={() => {
+                      setDetailDialogOpen(false);
+                      openEdit(currentViewReg);
+                    }}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit Registration
+                  </Button>
+                </DialogFooter>
+              </div>
             </>
           )}
         </DialogContent>
@@ -1649,305 +891,139 @@ export default function AdminEventFinance() {
 
       {/* Registration Form Dialog */}
       <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="flex flex-row items-center justify-between">
-            <div>
-              <DialogTitle>
-                {editingId ? 'Edit registration' : 'Add registration'}
-              </DialogTitle>
-              <DialogDescription className="mt-1">
-                {editingId
-                  ? 'Update the registration details.'
-                  : 'Register a business for an upcoming event.'}
-              </DialogDescription>
-            </div>
-            <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </DialogClose>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? 'Edit Registration' : 'Add Registration'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingId
+                ? 'Update registration details.'
+                : 'Register a business for an event.'}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4">
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-5"
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="brandId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Business</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={loadingBrands || isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select business" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {loadingBrands ? (
-                              <div className="flex items-center justify-center py-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              </div>
-                            ) : brands.length > 0 ? (
-                              brands.map((b) => (
-                                // Use b._id if that's what's returned from your API
-                                <SelectItem
-                                  key={b._id || b.id}
-                                  value={b._id || b.id}
-                                >
-                                  {b.businessName}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="py-2 px-3 text-sm text-gray-500">
-                                No businesses available
-                              </div>
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="eventName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Event name</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={loadingBrands || isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select business" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {loadingEvents ? (
-                              <div className="flex items-center justify-center py-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              </div>
-                            ) : events.length > 0 ? (
-                              events.map((e) => (
-                                <SelectItem key={e._id} value={e._id}>
-                                  {e.title}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="py-2 px-3 text-sm text-gray-500">
-                                No businesses available
-                              </div>
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="packageTier"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Package tier</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select tier" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {packageTiers.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t} ({money.format(packageCatalog[t].price)})
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="brandId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Business</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={loadingBrands || isSubmitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select business" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {loadingBrands ? (
+                            <div className="flex items-center justify-center py-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            </div>
+                          ) : brands.length > 0 ? (
+                            brands.map((b) => (
+                              <SelectItem key={b._id} value={b._id}>
+                                {b.businessName}
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="pax"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Pax (seats)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="registrationStatus"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Registration status</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {registrationStatuses.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="invoiceStatus"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Invoice status</FormLabel>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          disabled={isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {invoiceStatuses.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="invoiceNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Invoice #</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., INV-2024-012"
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="dueDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Due date</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="date"
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="amountTotal"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Total (KES)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="amountPaid"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Paid (KES)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            {...field}
-                            disabled={isSubmitting}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                            ))
+                          ) : (
+                            <div className="py-2 px-3 text-sm text-gray-500">
+                              No businesses available
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
-                  name="notes"
+                  name="eventId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Notes</FormLabel>
+                      <FormLabel>Event</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={loadingEvents || isSubmitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select event" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {loadingEvents ? (
+                            <div className="flex items-center justify-center py-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            </div>
+                          ) : events.length > 0 ? (
+                            events.map((e) => (
+                              <SelectItem key={e._id} value={e._id}>
+                                {e.title}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="py-2 px-3 text-sm text-gray-500">
+                              No events available
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="packageTier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Package Tier</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={isSubmitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select tier" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {packageTiers.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t} (Includes: {packageCatalog[t].includedPax}{' '}
+                              pax)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="pax"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pax (Seats)</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Any special requests, seating notes, etc."
+                          type="number"
+                          min="1"
                           {...field}
                           disabled={isSubmitting}
                         />
@@ -1957,46 +1033,79 @@ export default function AdminEventFinance() {
                   )}
                 />
 
-                <DialogFooter className="mt-6">
-                  <DialogClose asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isSubmitting}
-                    >
-                      Cancel
-                    </Button>
-                  </DialogClose>
-                  <Button
-                    type="submit"
-                    variant="hero"
-                    disabled={isSubmitting}
-                    className="group relative w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold px-8 py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-80 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-xl overflow-hidden"
-                  >
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer" />
+                <FormField
+                  control={form.control}
+                  name="registrationStatus"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Registration Status</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={isSubmitting}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {registrationStatuses.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-                    {isSubmitting ? (
-                      <div className="flex items-center justify-center relative z-10">
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving...
-                      </div>
-                    ) : editingId ? (
-                      <span className="relative z-10 flex items-center justify-center">
-                        <CheckCircle className="mr-2 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        Update Registration
-                      </span>
-                    ) : (
-                      <span className="relative z-10 flex items-center justify-center">
-                        <PlusCircle className="mr-2 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        Create Registration
-                      </span>
-                    )}
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Special requests, seating notes, etc."
+                        {...field}
+                        disabled={isSubmitting}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSubmitting}
+                  >
+                    Cancel
                   </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </div>
+                </DialogClose>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : editingId ? (
+                    'Update Registration'
+                  ) : (
+                    'Create Registration'
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>

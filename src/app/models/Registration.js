@@ -3,39 +3,18 @@ const { Schema } = mongoose;
 
 const registrationSchema = new Schema(
   {
-    amountPaid: {
-      type: Number,
-      required: true,
-    },
-
-    amountTotal: {
-      type: Number,
-      required: true,
-    },
     brandId: {
       type: Schema.Types.ObjectId,
       ref: 'BrandReg',
       required: true,
     },
-    dueDate: {
-      type: Date,
-      required: true,
-    },
+
     eventId: {
       type: Schema.Types.ObjectId,
       ref: 'Event',
       required: true,
     },
 
-    invoiceNumber: {
-      type: String,
-      required: true,
-    },
-    invoiceStatus: {
-      type: String,
-
-      default: 'unpaid',
-    },
     notes: {
       type: String,
       default: null,
@@ -55,7 +34,6 @@ const registrationSchema = new Schema(
     },
     recordedBy: {
       type: String,
-      default: 'system',
     },
   },
   { timestamps: true }

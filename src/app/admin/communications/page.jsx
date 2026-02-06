@@ -505,7 +505,7 @@ export default function Communications() {
                         : 'Select All'}
                     </Button>
                   </div>
-                  <ScrollArea className="h-[160px] rounded-md border p-3">
+                  <ScrollArea className="h-40 rounded-md border p-3">
                     {loading.brands ? (
                       <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -851,7 +851,7 @@ export default function Communications() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{log.recipient}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
+                    <TableCell className="max-w-50 truncate text-sm text-muted-foreground">
                       {log.subject ? `${log.subject} - ` : ''}
                       {log.message}
                     </TableCell>

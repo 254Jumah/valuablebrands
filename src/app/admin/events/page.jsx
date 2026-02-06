@@ -514,6 +514,10 @@ export default function AdminEvents() {
                   Location
                 </TableHead>
                 <TableHead className="p-4 font-medium text-sm">
+                  Capacity
+                </TableHead>
+
+                <TableHead className="p-4 font-medium text-sm">
                   Category
                 </TableHead>
                 <TableHead className="p-4 font-medium text-sm">
@@ -575,6 +579,11 @@ export default function AdminEvents() {
                           {event.location}
                         </span>
                       </div>
+                    </TableCell>
+                    <TableCell className="p-4">
+                      <span className="px-3 py-1 rounded-full bg-muted text-xs font-medium">
+                        {event.capacity}
+                      </span>
                     </TableCell>
                     <TableCell className="p-4">
                       <span className="px-3 py-1 rounded-full bg-muted text-xs font-medium">
