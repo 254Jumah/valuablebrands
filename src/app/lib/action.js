@@ -15,6 +15,10 @@ import BrandReg from '../models/BrandReg';
 import Event from '../models/Event';
 import Registration from '../models/Registration';
 import Invoice from '../models/Invoice';
+import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
+
+import 'jspdf-autotable';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.privateemail.com',
@@ -502,77 +506,258 @@ export const deleteBrandAction = async (brandId) => {
   }
 };
 
-// export const addRegistration = async (registrationData) => {
-//   'use server';
-//   await connect();
-
-//   try {
-//     // 🔎 CHECK FOR DUPLICATE REGISTRATION
-//     const existingRegistration = await Registration.findOne({
-//       brandId: registrationData.brandId,
-//       eventId: registrationData.eventId, // Fixed: should be eventId, not eventName
-//     });
-
-//     if (existingRegistration) {
-//       return {
-//         success: false,
-//         message: 'This brand is already registered for this event',
-//       };
-//     }
-
-//     // ✅ CREATE CLEAN REGISTRATION (NO FINANCIAL DATA)
-//     const registration = await Registration.create({
-//       brandId: registrationData.brandId,
-//       eventId: registrationData.eventId, // Fixed: eventId, not eventName
-//       notes: registrationData.notes,
-//       packageTier: registrationData.packageTier,
-//       pax: registrationData.pax,
-//       registrationStatus: registrationData.registrationStatus,
-//       recordedBy: registrationData.recordedBy || 'system',
-//     });
-//   const mailOptions = {
-//       from: `${businessInfo.name} <${
-//         process.env.EMAIL_USER || "jumahtitus@gmail.com"
-//       }>`,
-//       to: email,
-//       subject: `🎉 Welcome to ${businessInfo.name}!`,
-//       html: `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-//           <h2 style="color: #16a34a;">Dear ${name},</h2>
-//           <p>We are excited to welcome you to <strong>${
-//             businessInfo.name
-//           }</strong>! 🎊</p>
-//           <p>Your account has been successfully created with the role of <strong>${role}</strong>.</p>
-//           <p>We’re glad to have you onboard and look forward to achieving great things together. 🚀</p>
-//           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-//           <p style="font-size: 0.8em; color: #999;">
-//             © ${new Date().getFullYear()} ${
-//         businessInfo.name
-//       }. All rights reserved.
-//           </p>
-//         </div>
-//       `,
-//     };
-
-//     transporter.sendMail(mailOptions).catch((emailError) => {
-//       console.error("Error sending welcome email:", emailError.message);
-//     });
-
-//     return {
-//       success: true,
-//       data: registration,
-//       message: 'Registration added successfully',
-//     };
-//   } catch (error) {
-//     console.error('❌ addRegistration error:', error);
-//     return {
-//       success: false,
-//       message: error.message || 'Failed to add registration',
-//     };
-//   }
-// };
-
 export const addRegistration = async (registrationData) => {
+  await connect();
+
+  try {
+    // 🔁 CHECK DUPLICATE REGISTRATION
+    const exists = await Registration.findOne({
+      brandId: registrationData.brandId,
+      eventId: registrationData.eventId,
+    });
+
+    if (exists) {
+      return {
+        success: false,
+        message: 'This brand is already registered for this event',
+      };
+    }
+
+    // 📥 FETCH BRAND + EVENT
+    const brand = await BrandReg.findById(registrationData.brandId).lean();
+    const event = await Event.findById(registrationData.eventId).lean();
+
+    if (!brand || !event) {
+      return { success: false, message: 'Brand or event not found' };
+    }
+
+    // 📝 CREATE REGISTRATION
+    const registration = await Registration.create({
+      brandId: registrationData.brandId,
+      eventId: registrationData.eventId,
+      notes: registrationData.notes,
+      pax: registrationData.pax,
+      packageTier: registrationData.packageTier,
+      registrationStatus: registrationData.registrationStatus,
+      recordedBy: registrationData.recordedBy || 'system',
+    });
+
+    // 🌍 BUILD QR URL (CARRIES DATA)
+    const buildQrUrl = () => {
+      const baseUrl = process.env.PUBLIC_APP_URL || 'https://yourdomain.com';
+
+      const params = new URLSearchParams({
+        rid: registration._id.toString(),
+        bid: brand._id.toString(),
+        eid: event._id.toString(),
+      });
+
+      return `${baseUrl}/eventreservation?${params.toString()}`;
+    };
+
+    // 📄 GENERATE MODERN PDF
+    const generatePDF = async () => {
+      const doc = new jsPDF('p', 'mm', 'a4');
+
+      const pageWidth = doc.internal.pageSize.width;
+      const pageHeight = doc.internal.pageSize.height;
+      const margin = 20;
+
+      const BRAND_COLOR = [79, 70, 229];
+      const LIGHT_BG = [243, 244, 246];
+
+      // HEADER
+      doc.setFillColor(...BRAND_COLOR);
+      doc.rect(0, 0, pageWidth, 42, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('REGISTRATION CONFIRMATION', pageWidth / 2, 26, {
+        align: 'center',
+      });
+
+      // BODY CARD
+      doc.setFillColor(...LIGHT_BG);
+      doc.roundedRect(
+        margin,
+        55,
+        pageWidth - margin * 2,
+        pageHeight - 95,
+        6,
+        6,
+        'F'
+      );
+
+      let y = 70;
+
+      doc.setTextColor(55, 65, 81);
+      doc.setFontSize(10);
+      doc.text(
+        `REGISTRATION ID: ${registration._id.toString().slice(-8)}`,
+        margin + 6,
+        y
+      );
+
+      y += 10;
+
+      const section = (title) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.text(title, margin + 6, y);
+        y += 6;
+        doc.setDrawColor(200);
+        doc.line(margin + 6, y, pageWidth - margin - 6, y);
+        y += 8;
+      };
+
+      // EVENT DETAILS
+      section('EVENT DETAILS');
+      doc.setFontSize(11);
+
+      [
+        ['Event', event.title],
+        [
+          'Date',
+          event.date
+            ? new Date(event.date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })
+            : 'TBA',
+        ],
+        ['Location', event.location || 'To be announced'],
+        ['Seats', `${registrationData.pax}`],
+      ].forEach(([l, v]) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${l}:`, margin + 6, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(v, margin + 42, y);
+        y += 7;
+      });
+
+      // BRAND DETAILS
+      y += 4;
+      section('BRAND DETAILS');
+
+      [
+        ['Business', brand.businessName.toUpperCase()],
+        ['Contact', brand.primaryContactName || 'N/A'],
+        ['Email', brand.primaryContactEmail],
+        ['Phone', brand.primaryContactPhone || 'N/A'],
+      ].forEach(([l, v]) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${l}:`, margin + 6, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(v, margin + 42, y);
+        y += 7;
+      });
+
+      // PACKAGE
+      y += 4;
+      section('PACKAGE DETAILS');
+
+      doc.setFontSize(12);
+      doc.text(
+        `Selected Package: ${registrationData.packageTier}`,
+        margin + 6,
+        y
+      );
+      y += 8;
+
+      const packageFeatures = {
+        Bronze: ['Standard seating', 'Basic networking'],
+        Silver: ['Priority seating', 'Swag bag'],
+        Gold: ['VIP seating', 'Exclusive access'],
+      };
+
+      doc.setFontSize(11);
+      (packageFeatures[registrationData.packageTier] || []).forEach((f) => {
+        doc.text(`• ${f}`, margin + 12, y);
+        y += 6;
+      });
+
+      // QR CODE
+      const qrUrl = buildQrUrl();
+      const qrImage = await QRCode.toDataURL(qrUrl, {
+        margin: 1,
+        width: 200,
+      });
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('SCAN TO VIEW REGISTRATION', pageWidth - margin - 62, y - 8);
+
+      doc.addImage(qrImage, 'PNG', pageWidth - margin - 62, y, 45, 45);
+
+      // FOOTER
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(
+        `Generated on ${new Date().toLocaleDateString()}`,
+        margin,
+        pageHeight - 16
+      );
+      doc.text(
+        '© EVENT MANAGEMENT SYSTEM',
+        pageWidth - margin,
+        pageHeight - 16,
+        { align: 'right' }
+      );
+
+      return doc.output('arraybuffer');
+    };
+
+    const pdfBuffer = await generatePDF();
+    const pdfBase64 = Buffer.from(pdfBuffer).toString('base64');
+
+    // 📧 EMAIL
+    const BRAND_NAME = brand.businessName.toUpperCase();
+
+    await transporter.sendMail({
+      from: `EVENT MANAGEMENT <${process.env.EMAIL_USER}>`,
+      to: brand.primaryContactEmail,
+      subject: `✅ REGISTRATION CONFIRMED — ${BRAND_NAME}`,
+      html: `
+        <h2>🎉 REGISTRATION CONFIRMED</h2>
+        <p>Dear <strong>${brand.primaryContactName || BRAND_NAME}</strong>,</p>
+        <p>
+          The registration of <strong>${BRAND_NAME}</strong> for
+          <strong>${event.title}</strong> has been successfully completed.
+        </p>
+        <p>
+          Attached is your official confirmation PDF containing a
+          <strong>QR code</strong>. Scanning it will take you directly to your
+          registration page with all details.
+        </p>
+        <p>— Event Management Team</p>
+        <small>This is an automated message.</small>
+      `,
+      attachments: [
+        {
+          filename: `REGISTRATION_${registration._id.toString().slice(-8)}.pdf`,
+          content: pdfBase64,
+          encoding: 'base64',
+        },
+      ],
+    });
+
+    return {
+      success: true,
+      data: registration,
+      message: 'Registration completed with premium PDF & QR',
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: error.message || 'Registration failed',
+    };
+  }
+};
+
+export const addRegistrationlatest = async (registrationData) => {
   'use server';
   await connect();
 
@@ -590,7 +775,7 @@ export const addRegistration = async (registrationData) => {
       };
     }
 
-    // 📋 FETCH BRAND AND EVENT DETAILS FOR EMAIL
+    // 📋 FETCH BRAND AND EVENT DETAILS
     const brand = await BrandReg.findById(registrationData.brandId).lean();
     const event = await Event.findById(registrationData.eventId).lean();
 
@@ -601,7 +786,7 @@ export const addRegistration = async (registrationData) => {
       };
     }
 
-    // ✅ CREATE CLEAN REGISTRATION (NO FINANCIAL DATA)
+    // ✅ CREATE REGISTRATION
     const registration = await Registration.create({
       brandId: registrationData.brandId,
       eventId: registrationData.eventId,
@@ -612,46 +797,200 @@ export const addRegistration = async (registrationData) => {
       recordedBy: registrationData.recordedBy || 'system',
     });
 
-    // 🎉 SEND MODERN REGISTRATION CONFIRMATION EMAIL
-    const recipientEmail = brand.primaryContactEmail;
-    const recipientName = brand.primaryContactName || brand.businessName;
-    const brandName = brand.businessName;
-    const eventTitle = event.title;
-    const eventDate = event.date
-      ? new Date(event.date).toLocaleDateString('en-US', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })
-      : 'TBA';
-    const eventLocation = event.location || 'Venue to be confirmed';
+    // 📄 GENERATE PDF CONFIRMATION
+    const generatePDF = () => {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.width;
+      const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
 
-    // Package details
-    const packageDetails = {
-      Bronze: {
-        color: '#CD7F32',
-        features: ['Standard seating', 'Basic networking', 'Event materials'],
-      },
-      Silver: {
-        color: '#C0C0C0',
-        features: [
+      // Title
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('REGISTRATION CONFIRMATION', pageWidth / 2, margin, {
+        align: 'center',
+      });
+
+      // Registration ID
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Registration ID: ${registration._id.toString().slice(-8)}`,
+        margin,
+        margin + 15
+      );
+
+      // Divider
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, margin + 20, pageWidth - margin, margin + 20);
+
+      let yPos = margin + 30;
+
+      // Event Details Section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Event Details', margin, yPos);
+      yPos += 10;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+
+      const eventDetails = [
+        ['Event:', event.title],
+        [
+          'Date:',
+          event.date
+            ? new Date(event.date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })
+            : 'TBA',
+        ],
+        ['Location:', event.location || 'Venue to be confirmed'],
+        [
+          'Seats:',
+          `${registrationData.pax} ${registrationData.pax === 1 ? 'seat' : 'seats'}`,
+        ],
+      ];
+
+      eventDetails.forEach(([label, value]) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, margin, yPos);
+        doc.setFont('helvetica', 'normal');
+        doc.text(value, margin + 30, yPos);
+        yPos += 8;
+      });
+
+      yPos += 5;
+
+      // Brand Details Section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Brand Details', margin, yPos);
+      yPos += 10;
+
+      doc.setFontSize(10);
+      const brandDetails = [
+        ['Business Name:', brand.businessName],
+        ['Contact Person:', brand.primaryContactName || 'N/A'],
+        ['Email:', brand.primaryContactEmail],
+        ['Phone:', brand.primaryContactPhone || 'N/A'],
+      ];
+
+      brandDetails.forEach(([label, value]) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, margin, yPos);
+        doc.setFont('helvetica', 'normal');
+        doc.text(value, margin + 40, yPos);
+        yPos += 8;
+      });
+
+      yPos += 10;
+
+      // Package Details Section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Package Details', margin, yPos);
+      yPos += 10;
+
+      doc.setFontSize(12);
+      doc.text(
+        `Selected Package: ${registrationData.packageTier}`,
+        margin,
+        yPos
+      );
+      yPos += 8;
+
+      doc.setFontSize(10);
+
+      const packageFeatures = {
+        Bronze: ['Standard seating', 'Basic networking', 'Event materials'],
+        Silver: [
           'Priority seating',
           'Enhanced networking',
           'Event materials + Swag bag',
         ],
-      },
-      Gold: {
-        color: '#FFD700',
-        features: [
+        Gold: [
           'VIP seating',
           'Exclusive networking',
           'Full premium package + Photo ops',
         ],
-      },
+      };
+
+      const features = packageFeatures[registrationData.packageTier] || [];
+      features.forEach((feature) => {
+        doc.text(`• ${feature}`, margin + 5, yPos);
+        yPos += 7;
+      });
+
+      yPos += 10;
+
+      // Notes Section
+      if (registrationData.notes) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Special Notes', margin, yPos);
+        yPos += 10;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+
+        // Handle long notes with text wrapping
+        const notesLines = doc.splitTextToSize(
+          registrationData.notes,
+          contentWidth
+        );
+        doc.text(notesLines, margin, yPos);
+        yPos += notesLines.length * 7;
+      }
+
+      yPos += 15;
+
+      // Terms & Conditions
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'italic');
+      doc.text('Terms & Conditions:', margin, yPos);
+      yPos += 7;
+
+      const terms = [
+        '1. This registration is confirmed upon receipt of payment.',
+        '2. Cancellations must be made 48 hours prior to the event.',
+        '3. The organizers reserve the right to make changes to the schedule.',
+        '4. This document serves as official confirmation of registration.',
+      ];
+
+      terms.forEach((term) => {
+        doc.text(term, margin + 5, yPos);
+        yPos += 7;
+      });
+
+      // Footer
+      const footerY = doc.internal.pageSize.height - 20;
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(
+        `Generated on: ${new Date().toLocaleDateString()}`,
+        margin,
+        footerY
+      );
+      doc.text('© Event Management System', pageWidth - margin, footerY, {
+        align: 'right',
+      });
+
+      return doc.output('arraybuffer');
     };
 
-    const selectedPackage = packageDetails[registrationData.packageTier];
+    // 📧 SEND EMAIL WITH PDF ATTACHMENT
+    const recipientEmail = brand.primaryContactEmail;
+    const recipientName = brand.primaryContactName || brand.businessName;
+    const brandName = brand.businessName;
+    const eventTitle = event.title;
+
+    // Generate PDF
+    const pdfBuffer = generatePDF();
+    const pdfBase64 = Buffer.from(pdfBuffer).toString('base64');
 
     const mailOptions = {
       from: `Event Management <${process.env.EMAIL_USER || 'events@yourcompany.com'}>`,
@@ -663,333 +1002,95 @@ export const addRegistration = async (registrationData) => {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Registration Confirmation</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-            body {
-              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              line-height: 1.6;
-              color: #333;
-              margin: 0;
-              padding: 0;
-              background-color: #f8fafc;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              background: white;
-              border-radius: 16px;
-              overflow: hidden;
-              box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-            }
-            .header {
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
-              padding: 40px 30px;
-              text-align: center;
-            }
-            .header h1 {
-              margin: 0;
-              font-size: 28px;
-              font-weight: 700;
-              letter-spacing: -0.5px;
-            }
-            .header p {
-              margin: 10px 0 0;
-              opacity: 0.9;
-              font-size: 16px;
-            }
-            .content {
-              padding: 40px 30px;
-            }
-            .badge {
-              display: inline-block;
-              padding: 8px 16px;
-              background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-              color: white;
-              border-radius: 20px;
-              font-size: 14px;
-              font-weight: 600;
-              margin-bottom: 30px;
-            }
-            .section {
-              margin-bottom: 30px;
-              padding-bottom: 30px;
-              border-bottom: 1px solid #e2e8f0;
-            }
-            .section:last-child {
-              border-bottom: none;
-              margin-bottom: 0;
-              padding-bottom: 0;
-            }
-            .section-title {
-              font-size: 18px;
-              font-weight: 600;
-              color: #1e293b;
-              margin-bottom: 16px;
-              display: flex;
-              align-items: center;
-              gap: 10px;
-            }
-            .section-title svg {
-              color: #6366f1;
-            }
-            .details-grid {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-              gap: 20px;
-              margin-top: 20px;
-            }
-            .detail-card {
-              background: #f8fafc;
-              padding: 20px;
-              border-radius: 12px;
-              border-left: 4px solid #6366f1;
-            }
-            .detail-label {
-              font-size: 12px;
-              color: #64748b;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              font-weight: 600;
-              margin-bottom: 6px;
-            }
-            .detail-value {
-              font-size: 16px;
-              font-weight: 600;
-              color: #1e293b;
-            }
-            .package-card {
-              background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-              border: 1px solid #e2e8f0;
-              border-radius: 12px;
-              padding: 24px;
-              margin-top: 16px;
-              position: relative;
-              border-left: 4px solid ${selectedPackage.color};
-            }
-            .package-tier {
-              position: absolute;
-              top: -12px;
-              left: 24px;
-              background: ${selectedPackage.color};
-              color: white;
-              padding: 6px 16px;
-              border-radius: 20px;
-              font-size: 14px;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .features-list {
-              list-style: none;
-              padding: 0;
-              margin: 20px 0 0;
-            }
-            .features-list li {
-              padding: 8px 0;
-              padding-left: 28px;
-              position: relative;
-            }
-            .features-list li:before {
-              content: "✓";
-              position: absolute;
-              left: 0;
-              color: #10b981;
-              font-weight: bold;
-            }
-            .next-steps {
-              background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-              border-radius: 12px;
-              padding: 24px;
-              margin-top: 30px;
-            }
-            .next-steps h3 {
-              margin-top: 0;
-              color: #0369a1;
-            }
-            .footer {
-              background: #1e293b;
-              color: #cbd5e1;
-              padding: 30px;
-              text-align: center;
-              font-size: 14px;
-            }
-            .footer a {
-              color: #60a5fa;
-              text-decoration: none;
-            }
-            .footer a:hover {
-              text-decoration: underline;
-            }
-            @media (max-width: 600px) {
-              .container {
-                border-radius: 0;
-                box-shadow: none;
-              }
-              .header, .content {
-                padding: 30px 20px;
-              }
-              .details-grid {
-                grid-template-columns: 1fr;
-              }
-            }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                     color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { padding: 30px; background: #f8fafc; border-radius: 0 0 10px 10px; }
+            .badge { display: inline-block; background: #10b981; color: white;
+                    padding: 8px 16px; border-radius: 20px; font-size: 14px; }
+            .cta-button { display: inline-block; background: #667eea; color: white;
+                        padding: 12px 24px; text-decoration: none; border-radius: 5px;
+                        margin: 20px 0; font-weight: bold; }
+            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;
+                     color: #666; font-size: 12px; }
           </style>
         </head>
         <body>
           <div class="container">
-            <!-- Header -->
             <div class="header">
               <h1>🎉 Registration Confirmed!</h1>
-              <p>You're officially registered for ${eventTitle}</p>
+              <p>Your registration for ${eventTitle} has been successfully processed</p>
             </div>
 
-            <!-- Content -->
             <div class="content">
               <div class="badge">Registration ID: ${registration._id.toString().slice(-8)}</div>
 
-              <!-- Greeting -->
-              <div class="section">
-                <p>Dear <strong>${recipientName}</strong>,</p>
-                <p>Thank you for registering <strong>${brandName}</strong> for <strong>${eventTitle}</strong>. We're excited to have you join us!</p>
-              </div>
+              <p>Dear <strong>${recipientName}</strong>,</p>
 
-              <!-- Registration Details -->
-              <div class="section">
-                <div class="section-title">
-                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                  </svg>
-                  Registration Summary
-                </div>
+              <p>Thank you for registering <strong>${brandName}</strong> for <strong>${eventTitle}</strong>.
+              We're excited to have you join us!</p>
 
-                <div class="details-grid">
-                  <div class="detail-card">
-                    <div class="detail-label">Event</div>
-                    <div class="detail-value">${eventTitle}</div>
-                  </div>
-                  <div class="detail-card">
-                    <div class="detail-label">Date</div>
-                    <div class="detail-value">${eventDate}</div>
-                  </div>
-                  <div class="detail-card">
-                    <div class="detail-label">Location</div>
-                    <div class="detail-value">${eventLocation}</div>
-                  </div>
-                  <div class="detail-card">
-                    <div class="detail-label">Seats Reserved</div>
-                    <div class="detail-value">${registrationData.pax} ${registrationData.pax === 1 ? 'seat' : 'seats'}</div>
-                  </div>
-                </div>
-              </div>
+              <h3>📋 Summary</h3>
+              <ul>
+                <li><strong>Event:</strong> ${eventTitle}</li>
+                <li><strong>Package:</strong> ${registrationData.packageTier}</li>
+                <li><strong>Seats:</strong> ${registrationData.pax}</li>
+                <li><strong>Status:</strong> ${registrationData.registrationStatus}</li>
+              </ul>
 
-              <!-- Package Details -->
-              <div class="section">
-                <div class="section-title">
-                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                  </svg>
-                  Your Package
-                </div>
+              <h3>📎 What's Attached?</h3>
+              <p>Your confirmation PDF contains:</p>
+              <ul>
+                <li>Complete registration details</li>
+                <li>Package features</li>
+                <li>Terms and conditions</li>
+                <li>Registration ID for reference</li>
+              </ul>
 
-                <div class="package-card">
-                  <div class="package-tier">${registrationData.packageTier}</div>
-                  <h3 style="margin-top: 20px; color: #1e293b;">${registrationData.packageTier} Package Benefits</h3>
-                  <ul class="features-list">
-                    ${selectedPackage.features.map((feature) => `<li>${feature}</li>`).join('')}
-                  </ul>
-                </div>
-              </div>
-
-              <!-- Status & Next Steps -->
-              <div class="section">
-                <div class="section-title">
-                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clip-rule="evenodd"/>
-                  </svg>
-                  Status & Next Steps
-                </div>
-
-                <div class="next-steps">
-                  <h3>Current Status: ${registrationData.registrationStatus}</h3>
-                  <p><strong>Next Steps:</strong></p>
-                  <ul class="features-list">
-                    <li>You will receive an invoice separately via email</li>
-                    <li>Event details and schedule will be sent 1 week before the event</li>
-                    <li>Check your email for any updates or changes</li>
-                    <li>Contact us if you need to modify your registration</li>
-                  </ul>
-                </div>
-              </div>
-
-              <!-- Notes -->
-              ${
-                registrationData.notes
-                  ? `
-              <div class="section">
-                <div class="section-title">
-                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/>
-                    <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"/>
-                  </svg>
-                  Special Notes
-                </div>
-                <div style="background: #fff7ed; padding: 16px; border-radius: 8px; border-left: 4px solid #f97316;">
-                  <p style="margin: 0; color: #9a3412;">${registrationData.notes}</p>
-                </div>
-              </div>
-              `
-                  : ''
-              }
-
-              <!-- Contact Info -->
-              <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
-                <p style="color: #64748b; font-size: 14px;">
-                  Need assistance? Contact our team:<br>
-                  📧 events@yourcompany.com | 📞 +254 700 000 000
-                </p>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="footer">
               <p>
-                © ${new Date().getFullYear()} Event Management System. All rights reserved.<br>
-                <small>This is an automated message. Please do not reply to this email.</small>
+                <a href="#" class="cta-button">View Event Details</a>
               </p>
-              <p style="margin-top: 15px;">
-                <a href="https://yourcompany.com/events">View Event Details</a> •
-                <a href="https://yourcompany.com/contact">Contact Support</a> •
-                <a href="https://yourcompany.com/privacy">Privacy Policy</a>
-              </p>
+
+              <h3>📅 Next Steps</h3>
+              <ol>
+                <li>Review the attached confirmation PDF</li>
+                <li>You will receive an invoice separately</li>
+                <li>Event details will be sent 1 week prior</li>
+                <li>Contact us for any changes needed</li>
+              </ol>
+
+              <div class="footer">
+                <p>Need help? Contact us: 📧 events@yourcompany.com | 📞 +254 700 000 000</p>
+                <p>© ${new Date().getFullYear()} Event Management System. All rights reserved.</p>
+                <p><small>This is an automated message. Please do not reply to this email.</small></p>
+              </div>
             </div>
           </div>
         </body>
         </html>
       `,
+      attachments: [
+        {
+          filename: `Registration_Confirmation_${registration._id.toString().slice(-8)}.pdf`,
+          content: pdfBase64,
+          encoding: 'base64',
+          contentType: 'application/pdf',
+        },
+      ],
     };
 
-    // 📧 Send email (in background, don't await)
-    transporter
-      .sendMail(mailOptions)
-      .then(() => {
-        console.log(
-          `✅ Registration confirmation email sent to: ${recipientEmail}`
-        );
-      })
-      .catch((emailError) => {
-        console.error(
-          '❌ Error sending registration email:',
-          emailError.message
-        );
-        // Don't fail the registration if email fails
-      });
+    // Send email with PDF attachment
+    await transporter.sendMail(mailOptions);
+    console.log(
+      `✅ Registration confirmation email with PDF sent to: ${recipientEmail}`
+    );
 
     return {
       success: true,
       data: registration,
-      message: 'Registration added successfully',
+      message: 'Registration added successfully with PDF confirmation',
     };
   } catch (error) {
     console.error('❌ addRegistration error:', error);
@@ -999,12 +1100,465 @@ export const addRegistration = async (registrationData) => {
     };
   }
 };
+
+// export const addRegistration = async (registrationData) => {
+//   'use server';
+//   await connect();
+
+//   try {
+//     // 🔎 CHECK FOR DUPLICATE REGISTRATION
+//     const existingRegistration = await Registration.findOne({
+//       brandId: registrationData.brandId,
+//       eventId: registrationData.eventId,
+//     });
+
+//     if (existingRegistration) {
+//       return {
+//         success: false,
+//         message: 'This brand is already registered for this event',
+//       };
+//     }
+
+//     // 📋 FETCH BRAND AND EVENT DETAILS FOR EMAIL
+//     const brand = await BrandReg.findById(registrationData.brandId).lean();
+//     const event = await Event.findById(registrationData.eventId).lean();
+
+//     if (!brand || !event) {
+//       return {
+//         success: false,
+//         message: 'Brand or event not found',
+//       };
+//     }
+
+//     // ✅ CREATE CLEAN REGISTRATION (NO FINANCIAL DATA)
+//     const registration = await Registration.create({
+//       brandId: registrationData.brandId,
+//       eventId: registrationData.eventId,
+//       notes: registrationData.notes,
+//       packageTier: registrationData.packageTier,
+//       pax: registrationData.pax,
+//       registrationStatus: registrationData.registrationStatus,
+//       recordedBy: registrationData.recordedBy || 'system',
+//     });
+
+//     // 🎉 SEND MODERN REGISTRATION CONFIRMATION EMAIL
+//     const recipientEmail = brand.primaryContactEmail;
+//     const recipientName = brand.primaryContactName || brand.businessName;
+//     const brandName = brand.businessName;
+//     const eventTitle = event.title;
+//     const eventDate = event.date
+//       ? new Date(event.date).toLocaleDateString('en-US', {
+//           weekday: 'long',
+//           year: 'numeric',
+//           month: 'long',
+//           day: 'numeric',
+//         })
+//       : 'TBA';
+//     const eventLocation = event.location || 'Venue to be confirmed';
+
+//     // Package details
+//     const packageDetails = {
+//       Bronze: {
+//         color: '#CD7F32',
+//         features: ['Standard seating', 'Basic networking', 'Event materials'],
+//       },
+//       Silver: {
+//         color: '#C0C0C0',
+//         features: [
+//           'Priority seating',
+//           'Enhanced networking',
+//           'Event materials + Swag bag',
+//         ],
+//       },
+//       Gold: {
+//         color: '#FFD700',
+//         features: [
+//           'VIP seating',
+//           'Exclusive networking',
+//           'Full premium package + Photo ops',
+//         ],
+//       },
+//     };
+
+//     const selectedPackage = packageDetails[registrationData.packageTier];
+
+//     const mailOptions = {
+//       from: `Event Management <${process.env.EMAIL_USER || 'events@yourcompany.com'}>`,
+//       to: recipientEmail,
+//       subject: `✅ Registration Confirmed: ${brandName} for ${eventTitle}`,
+//       html: `
+//         <!DOCTYPE html>
+//         <html>
+//         <head>
+//           <meta charset="utf-8">
+//           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+//           <title>Registration Confirmation</title>
+//           <style>
+//             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+//             body {
+//               font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+//               line-height: 1.6;
+//               color: #333;
+//               margin: 0;
+//               padding: 0;
+//               background-color: #f8fafc;
+//             }
+//             .container {
+//               max-width: 600px;
+//               margin: 0 auto;
+//               background: white;
+//               border-radius: 16px;
+//               overflow: hidden;
+//               box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+//             }
+//             .header {
+//               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+//               color: white;
+//               padding: 40px 30px;
+//               text-align: center;
+//             }
+//             .header h1 {
+//               margin: 0;
+//               font-size: 28px;
+//               font-weight: 700;
+//               letter-spacing: -0.5px;
+//             }
+//             .header p {
+//               margin: 10px 0 0;
+//               opacity: 0.9;
+//               font-size: 16px;
+//             }
+//             .content {
+//               padding: 40px 30px;
+//             }
+//             .badge {
+//               display: inline-block;
+//               padding: 8px 16px;
+//               background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+//               color: white;
+//               border-radius: 20px;
+//               font-size: 14px;
+//               font-weight: 600;
+//               margin-bottom: 30px;
+//             }
+//             .section {
+//               margin-bottom: 30px;
+//               padding-bottom: 30px;
+//               border-bottom: 1px solid #e2e8f0;
+//             }
+//             .section:last-child {
+//               border-bottom: none;
+//               margin-bottom: 0;
+//               padding-bottom: 0;
+//             }
+//             .section-title {
+//               font-size: 18px;
+//               font-weight: 600;
+//               color: #1e293b;
+//               margin-bottom: 16px;
+//               display: flex;
+//               align-items: center;
+//               gap: 10px;
+//             }
+//             .section-title svg {
+//               color: #6366f1;
+//             }
+//             .details-grid {
+//               display: grid;
+//               grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+//               gap: 20px;
+//               margin-top: 20px;
+//             }
+//             .detail-card {
+//               background: #f8fafc;
+//               padding: 20px;
+//               border-radius: 12px;
+//               border-left: 4px solid #6366f1;
+//             }
+//             .detail-label {
+//               font-size: 12px;
+//               color: #64748b;
+//               text-transform: uppercase;
+//               letter-spacing: 0.5px;
+//               font-weight: 600;
+//               margin-bottom: 6px;
+//             }
+//             .detail-value {
+//               font-size: 16px;
+//               font-weight: 600;
+//               color: #1e293b;
+//             }
+//             .package-card {
+//               background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+//               border: 1px solid #e2e8f0;
+//               border-radius: 12px;
+//               padding: 24px;
+//               margin-top: 16px;
+//               position: relative;
+//               border-left: 4px solid ${selectedPackage.color};
+//             }
+//             .package-tier {
+//               position: absolute;
+//               top: -12px;
+//               left: 24px;
+//               background: ${selectedPackage.color};
+//               color: white;
+//               padding: 6px 16px;
+//               border-radius: 20px;
+//               font-size: 14px;
+//               font-weight: 600;
+//               text-transform: uppercase;
+//               letter-spacing: 0.5px;
+//             }
+//             .features-list {
+//               list-style: none;
+//               padding: 0;
+//               margin: 20px 0 0;
+//             }
+//             .features-list li {
+//               padding: 8px 0;
+//               padding-left: 28px;
+//               position: relative;
+//             }
+//             .features-list li:before {
+//               content: "✓";
+//               position: absolute;
+//               left: 0;
+//               color: #10b981;
+//               font-weight: bold;
+//             }
+//             .next-steps {
+//               background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+//               border-radius: 12px;
+//               padding: 24px;
+//               margin-top: 30px;
+//             }
+//             .next-steps h3 {
+//               margin-top: 0;
+//               color: #0369a1;
+//             }
+//             .footer {
+//               background: #1e293b;
+//               color: #cbd5e1;
+//               padding: 30px;
+//               text-align: center;
+//               font-size: 14px;
+//             }
+//             .footer a {
+//               color: #60a5fa;
+//               text-decoration: none;
+//             }
+//             .footer a:hover {
+//               text-decoration: underline;
+//             }
+//             @media (max-width: 600px) {
+//               .container {
+//                 border-radius: 0;
+//                 box-shadow: none;
+//               }
+//               .header, .content {
+//                 padding: 30px 20px;
+//               }
+//               .details-grid {
+//                 grid-template-columns: 1fr;
+//               }
+//             }
+//           </style>
+//         </head>
+//         <body>
+//           <div class="container">
+//             <!-- Header -->
+//             <div class="header">
+//               <h1>🎉 Registration Confirmed!</h1>
+//               <p>You're officially registered for ${eventTitle}</p>
+//             </div>
+
+//             <!-- Content -->
+//             <div class="content">
+//               <div class="badge">Registration ID: ${registration._id.toString().slice(-8)}</div>
+
+//               <!-- Greeting -->
+//               <div class="section">
+//                 <p>Dear <strong>${recipientName}</strong>,</p>
+//                 <p>Thank you for registering <strong>${brandName}</strong> for <strong>${eventTitle}</strong>. We're excited to have you join us!</p>
+//               </div>
+
+//               <!-- Registration Details -->
+//               <div class="section">
+//                 <div class="section-title">
+//                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+//                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+//                   </svg>
+//                   Registration Summary
+//                 </div>
+
+//                 <div class="details-grid">
+//                   <div class="detail-card">
+//                     <div class="detail-label">Event</div>
+//                     <div class="detail-value">${eventTitle}</div>
+//                   </div>
+//                   <div class="detail-card">
+//                     <div class="detail-label">Date</div>
+//                     <div class="detail-value">${eventDate}</div>
+//                   </div>
+//                   <div class="detail-card">
+//                     <div class="detail-label">Location</div>
+//                     <div class="detail-value">${eventLocation}</div>
+//                   </div>
+//                   <div class="detail-card">
+//                     <div class="detail-label">Seats Reserved</div>
+//                     <div class="detail-value">${registrationData.pax} ${registrationData.pax === 1 ? 'seat' : 'seats'}</div>
+//                   </div>
+//                 </div>
+//               </div>
+
+//               <!-- Package Details -->
+//               <div class="section">
+//                 <div class="section-title">
+//                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+//                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+//                   </svg>
+//                   Your Package
+//                 </div>
+
+//                 <div class="package-card">
+//                   <div class="package-tier">${registrationData.packageTier}</div>
+//                   <h3 style="margin-top: 20px; color: #1e293b;">${registrationData.packageTier} Package Benefits</h3>
+//                   <ul class="features-list">
+//                     ${selectedPackage.features.map((feature) => `<li>${feature}</li>`).join('')}
+//                   </ul>
+//                 </div>
+//               </div>
+
+//               <!-- Status & Next Steps -->
+//               <div class="section">
+//                 <div class="section-title">
+//                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+//                     <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clip-rule="evenodd"/>
+//                   </svg>
+//                   Status & Next Steps
+//                 </div>
+
+//                 <div class="next-steps">
+//                   <h3>Current Status: ${registrationData.registrationStatus}</h3>
+//                   <p><strong>Next Steps:</strong></p>
+//                   <ul class="features-list">
+//                     <li>You will receive an invoice separately via email</li>
+//                     <li>Event details and schedule will be sent 1 week before the event</li>
+//                     <li>Check your email for any updates or changes</li>
+//                     <li>Contact us if you need to modify your registration</li>
+//                   </ul>
+//                 </div>
+//               </div>
+
+//               <!-- Notes -->
+//               ${
+//                 registrationData.notes
+//                   ? `
+//               <div class="section">
+//                 <div class="section-title">
+//                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+//                     <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/>
+//                     <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"/>
+//                   </svg>
+//                   Special Notes
+//                 </div>
+//                 <div style="background: #fff7ed; padding: 16px; border-radius: 8px; border-left: 4px solid #f97316;">
+//                   <p style="margin: 0; color: #9a3412;">${registrationData.notes}</p>
+//                 </div>
+//               </div>
+//               `
+//                   : ''
+//               }
+
+//               <!-- Contact Info -->
+//               <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
+//                 <p style="color: #64748b; font-size: 14px;">
+//                   Need assistance? Contact our team:<br>
+//                   📧 events@yourcompany.com | 📞 +254 700 000 000
+//                 </p>
+//               </div>
+//             </div>
+
+//             <!-- Footer -->
+//             <div class="footer">
+//               <p>
+//                 © ${new Date().getFullYear()} Event Management System. All rights reserved.<br>
+//                 <small>This is an automated message. Please do not reply to this email.</small>
+//               </p>
+//               <p style="margin-top: 15px;">
+//                 <a href="https://yourcompany.com/events">View Event Details</a> •
+//                 <a href="https://yourcompany.com/contact">Contact Support</a> •
+//                 <a href="https://yourcompany.com/privacy">Privacy Policy</a>
+//               </p>
+//             </div>
+//           </div>
+//         </body>
+//         </html>
+//       `,
+//     };
+
+//     // 📧 Send email (in background, don't await)
+//     transporter
+//       .sendMail(mailOptions)
+//       .then(() => {
+//         console.log(
+//           `✅ Registration confirmation email sent to: ${recipientEmail}`
+//         );
+//       })
+//       .catch((emailError) => {
+//         console.error(
+//           '❌ Error sending registration email:',
+//           emailError.message
+//         );
+//         // Don't fail the registration if email fails
+//       });
+
+//     return {
+//       success: true,
+//       data: registration,
+//       message: 'Registration added successfully',
+//     };
+//   } catch (error) {
+//     console.error('❌ addRegistration error:', error);
+//     return {
+//       success: false,
+//       message: error.message || 'Failed to add registration',
+//     };
+//   }
+// };
 export const fetchRegistrations = async () => {
   'use server';
   try {
     await connect();
 
     const registrations = await Registration.find()
+      .populate('brandId')
+      .populate('eventId')
+      .sort({ createdAt: -1 })
+      .lean(); // 🔥 CRITICAL
+    console.log({ registrations });
+    return registrations;
+  } catch (err) {
+    console.error(err);
+    throw new Error('Failed to fetch registrations!');
+  }
+};
+export const fetchSingleRegistrations = async (
+  registrationId,
+  brandId,
+  eventId
+) => {
+  'use server';
+  try {
+    await connect();
+
+    const registrations = await Registration.find({
+      _id: registrationId,
+      brandId: brandId,
+      eventId: eventId,
+    })
       .populate('brandId')
       .populate('eventId')
       .sort({ createdAt: -1 })
