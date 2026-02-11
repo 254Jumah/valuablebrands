@@ -107,10 +107,6 @@ export default function AdminEvents() {
   const [deletingEvent, setDeletingEvent] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
 
-  // Get categories from events data
-  // const categories = useMemo(() => {
-  //   if (!events || events.length === 0) return [];
-
   const categories = useMemo(() => {
     if (!events || events.length === 0) return [];
     // Extract unique categories from events

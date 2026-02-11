@@ -19,6 +19,7 @@ import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
 import 'jspdf-autotable';
+import EventPackage from '../models/EventPackage';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.privateemail.com',
@@ -267,7 +268,6 @@ export const fetchUpcomingEvents = async () => {
     throw new Error('Failed to fetch upcoming events!');
   }
 };
-
 
 export const addEvent = async (data) => {
   'use server';
@@ -1870,6 +1870,104 @@ export const fetchMessageTemplates = async () => {
     throw new Error('Failed to fetch message templates');
   }
 };
+
+export const createEventPackage = async (packageData) => {
+  await connect();
+
+  try {
+    const pkg = await EventPackage.create(packageData);
+
+    // Convert to plain object
+    const plainPkg = pkg.toObject();
+
+    return {
+      ...plainPkg,
+      id: plainPkg._id.toString(), // ensure id exists for frontend
+    };
+  } catch (error) {
+    console.error('❌ createEventPackage error:', error);
+    throw new Error('Failed to create package');
+  }
+};
+
+export const getEventPackages = async () => {
+  await connect();
+  try {
+    const packages = await EventPackage.find().lean();
+
+    // Map to add 'id' for frontend
+    const formattedPackages = packages.map((pkg) => ({
+      ...pkg,
+      id: pkg._id.toString(),
+    }));
+    console.log('✅ Fetched packages:', formattedPackages);
+    return formattedPackages;
+  } catch (error) {
+    console.error('❌ getEventPackages error:', error);
+    throw new Error('Failed to fetch packages');
+  }
+};
+
+export const updateEventPackage = async (id, packageData) => {
+  await connect();
+
+  try {
+    const updated = await EventPackage.findByIdAndUpdate(
+      id,
+      packageData,
+      { new: true } // 🔥 return updated doc
+    ).lean();
+
+    return {
+      ...updated,
+      id: updated._id.toString(),
+    };
+  } catch (error) {
+    console.error('❌ updateEventPackage error:', error);
+    throw new Error('Failed to update package');
+  }
+};
+
+export const deleteEventPackage = async (packageId) => {
+  await connect();
+  try {
+    const deletedPackage =
+      await EventPackage.findByIdAndDelete(packageId).lean();
+
+    if (!deletedPackage) return null; // in case the ID doesn't exist
+
+    return {
+      ...deletedPackage,
+      id: deletedPackage._id.toString(),
+    };
+  } catch (error) {
+    console.error('❌ deleteEventPackage error:', error);
+    throw new Error('Failed to delete package');
+  }
+};
+
+export const toggleEventPackageStatus = async (packageId, isActive) => {
+  await connect();
+
+  try {
+    const updatedPackage = await EventPackage.findByIdAndUpdate(
+      packageId,
+      { isActive },
+      { new: true, runValidators: true }
+    ).lean(); // 🔥 make it plain object
+
+    if (!updatedPackage) return null;
+
+    return {
+      ...updatedPackage,
+      id: updatedPackage._id.toString(),
+    };
+  } catch (error) {
+    console.error('❌ toggleEventPackageStatus error:', error);
+    throw new Error('Failed to toggle package status');
+  }
+};
+
 // ================= CONTRIBUTIONS =====================
 export const addpayment = async (memberData) => {
   await connect();

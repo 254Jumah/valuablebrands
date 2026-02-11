@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { z } from 'zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from 'date-fns';
 import {
@@ -81,9 +81,9 @@ import {
   deleteRegistration as apiDeleteRegistration,
   fetchRegistrations,
   fetchUpcomingEvents as fetchEvents,
+  getEventPackages,
 } from '@/app/lib/action';
 
-import { packageCatalog } from '@/data/mockEventFinance';
 import useAuth from '@/app/hooks/useAuth';
 
 const registrationStatuses = [
@@ -93,8 +93,6 @@ const registrationStatuses = [
   'Attended',
   'Cancelled',
 ];
-
-const packageTiers = ['Bronze', 'Silver', 'Gold'];
 
 function badgeForRegistration(status) {
   switch (status) {
@@ -111,11 +109,19 @@ function badgeForRegistration(status) {
   }
 }
 
+// Updated schema - pax is removed, it's derived from package.includedPax
 const registrationSchema = z.object({
   brandId: z.string().min(1, 'Business is required'),
   eventId: z.string().min(1, 'Event is required'),
-  packageTier: z.enum(['Bronze', 'Silver', 'Gold']),
-  pax: z.coerce.number().int().min(1).max(200),
+  packages: z
+    .array(
+      z.object({
+        packageId: z.string().min(1, 'Package is required'),
+        packageTier: z.string().min(1, 'Package tier is required'),
+        // pax is now derived from the package, not stored in form
+      })
+    )
+    .min(1, 'At least one package is required'),
   registrationStatus: z.enum([
     'Lead',
     'Interested',
@@ -130,19 +136,26 @@ function emptyFormValues() {
   return {
     brandId: '',
     eventId: '',
-    packageTier: 'Bronze',
-    pax: packageCatalog.Bronze.includedPax,
+    packages: [],
     registrationStatus: 'Interested',
     notes: '',
   };
 }
 
 function registrationToFormValues(r) {
+  // Handle both old and new format
+  const packages = r.packages || [
+    {
+      packageId: r.packageId,
+      packageTier: r.packageTier,
+      // pax is not included in form state anymore
+    },
+  ];
+
   return {
     brandId: r.brandId,
     eventId: r.eventId,
-    packageTier: r.packageTier,
-    pax: r.pax,
+    packages: packages,
     registrationStatus: r.registrationStatus,
     notes: r.notes ?? '',
   };
@@ -213,6 +226,8 @@ export default function AdminRegistrations() {
   const [viewingRegistration, setViewingRegistration] = useState(null);
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [packages, setPackages] = useState([]);
+  const [isFetching, setIsFetching] = useState(false);
 
   const brandsById = useMemo(() => {
     return new Map(brands.map((b) => [b._id, b]));
@@ -222,11 +237,39 @@ export default function AdminRegistrations() {
     return new Map(events.map((e) => [e._id, e]));
   }, [events]);
 
+  const packagesById = useMemo(() => {
+    return new Map(packages.map((p) => [p._id, p]));
+  }, [packages]);
+
   const form = useForm({
     resolver: zodResolver(registrationSchema),
     defaultValues: emptyFormValues(),
     mode: 'onBlur',
   });
+
+  // Setup field array for packages
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'packages',
+  });
+
+  // Auto-set packageTier when package is selected
+  const watchPackages = form.watch('packages');
+
+  useEffect(() => {
+    if (!packages.length) return;
+
+    watchPackages?.forEach((pkg, index) => {
+      if (pkg?.packageId) {
+        const selectedPackage = packagesById.get(pkg.packageId);
+        if (selectedPackage && pkg.packageTier !== selectedPackage.name) {
+          form.setValue(`packages.${index}.packageTier`, selectedPackage.name, {
+            shouldValidate: true,
+          });
+        }
+      }
+    });
+  }, [watchPackages, packages, packagesById, form]);
 
   // Fetch brands
   const getBrandsData = async () => {
@@ -243,6 +286,26 @@ export default function AdminRegistrations() {
       setLoadingBrands(false);
     }
   };
+
+  const fetchPackages = async () => {
+    setIsFetching(true);
+    try {
+      console.log('📡 Fetching packages from backend...');
+      const data = await getEventPackages();
+      console.log('✅ Packages fetched successfully:', data);
+      setPackages(data || []);
+    } catch (error) {
+      console.error('❌ Error fetching packages:', error);
+      toast.error('Failed to load packages');
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Load packages on component mount
+  useEffect(() => {
+    fetchPackages();
+  }, []);
 
   // Fetch events
   const getEventsData = async () => {
@@ -278,14 +341,6 @@ export default function AdminRegistrations() {
     getEventsData();
   }, []);
 
-  // Auto-fill pax based on tier when creating (not editing)
-  const tier = form.watch('packageTier');
-  useEffect(() => {
-    if (editingId) return;
-    const cfg = packageCatalog[tier];
-    form.setValue('pax', cfg?.includedPax, { shouldValidate: true });
-  }, [tier, editingId, form]);
-
   // Filter registrations
   const filtered = useMemo(() => {
     if (loading) return [];
@@ -299,13 +354,16 @@ export default function AdminRegistrations() {
         if (!q) return true;
         const brand = brandsById.get(r.brandId);
         const event = eventsById.get(r.eventId);
+        const packages = r.packages || [{ packageTier: r.packageTier }];
+        const packageText = packages.map((p) => p.packageTier).join(' ');
+
         const haystack = [
           event?.title,
           brand?.businessName,
           brand?.category,
           brand?.primaryContact?.name,
           brand?.primaryContact?.email,
-          r.packageTier,
+          packageText,
           r.notes,
         ]
           .filter(Boolean)
@@ -326,10 +384,31 @@ export default function AdminRegistrations() {
     const attended = registrations.filter(
       (r) => r.registrationStatus === 'Attended'
     ).length;
-    const totalPax = registrations.reduce((s, r) => s + r.pax, 0);
+
+    // Calculate total pax from packages
+    const totalPax = registrations.reduce((s, r) => {
+      const packages = r.packages || [
+        {
+          packageId: r.packageId,
+          pax: r.pax, // fallback for old format
+        },
+      ];
+
+      return (
+        s +
+        packages.reduce((sum, p) => {
+          // If it's new format with packageId, get includedPax from package
+          if (p.packageId && packagesById.has(p.packageId)) {
+            return sum + packagesById.get(p.packageId).includedPax;
+          }
+          // Fallback for old format
+          return sum + (p.pax || 0);
+        }, 0)
+      );
+    }, 0);
 
     return { total, registered, attended, totalPax };
-  }, [registrations, loading]);
+  }, [registrations, loading, packagesById]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -351,11 +430,23 @@ export default function AdminRegistrations() {
   const onSubmit = async (values) => {
     setIsSubmitting(true);
     try {
+      // Calculate total pax from selected packages
+      const totalPax = values.packages.reduce((sum, p) => {
+        const pkg = packagesById.get(p.packageId);
+        return sum + (pkg?.includedPax || 0);
+      }, 0);
+
       const registrationData = {
         brandId: values.brandId,
         eventId: values.eventId,
-        packageTier: values.packageTier,
-        pax: values.pax,
+        packages: values.packages.map((p) => ({
+          packageId: p.packageId,
+          packageTier: p.packageTier,
+        })),
+        // Keep single fields for backward compatibility
+        packageId: values.packages[0]?.packageId,
+        packageTier: values.packages[0]?.packageTier,
+        pax: totalPax,
         registrationStatus: values.registrationStatus,
         notes: values.notes || undefined,
         recordedBy: name,
@@ -627,8 +718,8 @@ export default function AdminRegistrations() {
                 <TableRow>
                   <TableHead>Business</TableHead>
                   <TableHead>Event</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead>Pax</TableHead>
+                  <TableHead>Packages</TableHead>
+                  <TableHead>Total Pax</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -668,8 +759,8 @@ export default function AdminRegistrations() {
                 <TableRow>
                   <TableHead>Business</TableHead>
                   <TableHead>Event</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead>Pax</TableHead>
+                  <TableHead>Packages</TableHead>
+                  <TableHead>Total Pax</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -679,6 +770,20 @@ export default function AdminRegistrations() {
                 {filtered.map((r) => {
                   const brand = brandsById.get(r.brandId);
                   const event = eventsById.get(r.eventId);
+                  const packages = r.packages || [
+                    {
+                      packageId: r.packageId,
+                      packageTier: r.packageTier,
+                    },
+                  ];
+
+                  // Calculate total pax from packages
+                  const totalPax = packages.reduce((sum, p) => {
+                    if (p.packageId && packagesById.has(p.packageId)) {
+                      return sum + packagesById.get(p.packageId).includedPax;
+                    }
+                    return sum + (r.pax || 0); // fallback for old format
+                  }, 0);
 
                   return (
                     <TableRow key={r._id}>
@@ -706,11 +811,23 @@ export default function AdminRegistrations() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {r.packageTier}
-                        </Badge>
+                        <div className="space-y-1">
+                          {packages.map((pkg, idx) => {
+                            const pkgDetails = packagesById.get(pkg.packageId);
+                            return (
+                              <Badge
+                                key={idx}
+                                variant="outline"
+                                className="capitalize mr-1"
+                              >
+                                {pkg.packageTier} (
+                                {pkgDetails?.includedPax || r.pax || 0} pax)
+                              </Badge>
+                            );
+                          })}
+                        </div>
                       </TableCell>
-                      <TableCell>{r.pax}</TableCell>
+                      <TableCell>{totalPax}</TableCell>
                       <TableCell>
                         <Badge
                           variant={badgeForRegistration(r.registrationStatus)}
@@ -812,7 +929,6 @@ export default function AdminRegistrations() {
                     <p className="text-xs text-muted-foreground">Business</p>
                     <p className="font-medium caret-pink-600 capitalize">
                       {(() => {
-                        // Try multiple ways to get the business name
                         if (
                           typeof currentViewReg.brandId === 'object' &&
                           currentViewReg.brandId?.businessName
@@ -828,7 +944,6 @@ export default function AdminRegistrations() {
                     <p className="text-xs text-muted-foreground">Event</p>
                     <p className="font-medium capitalize caret-pink-700">
                       {(() => {
-                        // Try multiple ways to get the event name
                         if (currentViewReg.eventName) {
                           return currentViewReg.eventName;
                         }
@@ -845,16 +960,35 @@ export default function AdminRegistrations() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Package</p>
-                    <Badge variant="outline" className="capitalize">
-                      {currentViewReg.packageTier}
-                    </Badge>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Pax</p>
-                    <p className="font-medium">{currentViewReg.pax}</p>
+                <div>
+                  <p className="text-xs text-muted-foreground">Packages</p>
+                  <div className="space-y-2 mt-1">
+                    {(
+                      currentViewReg.packages || [
+                        {
+                          packageId: currentViewReg.packageId,
+                          packageTier: currentViewReg.packageTier,
+                        },
+                      ]
+                    ).map((pkg, idx) => {
+                      const pkgDetails = packagesById.get(pkg.packageId);
+                      return (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Badge variant="outline" className="capitalize">
+                            {pkg.packageTier}
+                          </Badge>
+                          <span className="text-sm">
+                            {pkgDetails?.includedPax || currentViewReg.pax || 0}{' '}
+                            pax
+                          </span>
+                          {pkgDetails?.price && (
+                            <span className="text-xs text-muted-foreground">
+                              Ksh{pkgDetails.price}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -912,7 +1046,7 @@ export default function AdminRegistrations() {
 
       {/* Registration Form Dialog */}
       <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingId ? 'Edit Registration' : 'Add Registration'}
@@ -1004,85 +1138,206 @@ export default function AdminRegistrations() {
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="packageTier"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Package Tier</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={isSubmitting}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select tier" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {packageTiers.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t} (Includes: {packageCatalog[t].includedPax}{' '}
-                              pax)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="pax"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Pax (Seats)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          {...field}
-                          disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="registrationStatus"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Registration Status</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={isSubmitting}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {registrationStatuses.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
+
+              {/* Packages Section - Using DB packages, no manual pax input */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <FormLabel className="text-base">Packages</FormLabel>
+                  {packages.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const firstPackage = packages[0];
+                        append({
+                          packageId: firstPackage._id,
+                          packageTier: firstPackage.name,
+                        });
+                      }}
+                      disabled={isSubmitting || isFetching}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Package
+                    </Button>
+                  )}
+                </div>
+
+                {isFetching ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : packages.length === 0 ? (
+                  <div className="text-center py-6 border border-dashed rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      No packages available.
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Please create packages first.
+                    </p>
+                  </div>
+                ) : fields.length === 0 ? (
+                  <div className="text-center py-6 border border-dashed rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      No packages added yet.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="link"
+                      onClick={() => {
+                        const firstPackage = packages[0];
+                        append({
+                          packageId: firstPackage._id,
+                          packageTier: firstPackage.name,
+                        });
+                      }}
+                      className="mt-2"
+                    >
+                      Add your first package
+                    </Button>
+                  </div>
+                ) : (
+                  fields.map((field, index) => {
+                    const selectedPackageId = form.watch(
+                      `packages.${index}.packageId`
+                    );
+                    const selectedPackage = selectedPackageId
+                      ? packagesById.get(selectedPackageId)
+                      : null;
+
+                    return (
+                      <div
+                        key={field.id}
+                        className="space-y-4 p-4 border rounded-lg relative"
+                      >
+                        {fields.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="absolute top-2 right-2"
+                            onClick={() => remove(index)}
+                            disabled={isSubmitting}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+
+                        <h4 className="font-medium text-sm">
+                          Package {index + 1}
+                        </h4>
+
+                        <FormField
+                          control={form.control}
+                          name={`packages.${index}.packageId`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Package Tier</FormLabel>
+                              <Select
+                                value={field.value}
+                                onValueChange={field.onChange}
+                                disabled={isSubmitting}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select package" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {packages.map((pkg) => (
+                                    <SelectItem key={pkg._id} value={pkg._id}>
+                                      {pkg.name} - Ksh{pkg.price} (
+                                      {pkg.includedPax} pax)
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {selectedPackage && (
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                Included Pax
+                              </p>
+                              <p className="font-medium">
+                                {selectedPackage.includedPax} seats
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">
+                                Price
+                              </p>
+                              <p className="font-medium">
+                                Ksh{selectedPackage.price}
+                              </p>
+                            </div>
+                            {selectedPackage.benefits &&
+                              selectedPackage.benefits.length > 0 && (
+                                <div className="col-span-2">
+                                  <p className="text-xs text-muted-foreground mb-1">
+                                    Benefits
+                                  </p>
+                                  <ul className="text-xs list-disc list-inside">
+                                    {selectedPackage.benefits
+                                      .slice(0, 2)
+                                      .map((benefit, i) => (
+                                        <li
+                                          key={i}
+                                          className="text-muted-foreground"
+                                        >
+                                          {benefit}
+                                        </li>
+                                      ))}
+                                    {selectedPackage.benefits.length > 2 && (
+                                      <li className="text-muted-foreground">
+                                        +{selectedPackage.benefits.length - 2}{' '}
+                                        more
+                                      </li>
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <FormField
+                control={form.control}
+                name="registrationStatus"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Registration Status</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={isSubmitting}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {registrationStatuses.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
@@ -1112,7 +1367,12 @@ export default function AdminRegistrations() {
                     Cancel
                   </Button>
                 </DialogClose>
-                <Button type="submit" disabled={isSubmitting}>
+                <Button
+                  type="submit"
+                  disabled={
+                    isSubmitting || packages.length === 0 || fields.length === 0
+                  }
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
