@@ -80,7 +80,7 @@ import {
   updateRegistration as apiUpdateRegistration,
   deleteRegistration as apiDeleteRegistration,
   fetchRegistrations,
-  fetchEvents,
+  fetchUpcomingEvents as fetchEvents,
 } from '@/app/lib/action';
 
 import { packageCatalog } from '@/data/mockEventFinance';
@@ -810,16 +810,37 @@ export default function AdminRegistrations() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Business</p>
-                    <p className="font-medium">
-                      {brandsById.get(currentViewReg.brandId)?.businessName ||
-                        'Unknown'}
+                    <p className="font-medium caret-pink-600 capitalize">
+                      {(() => {
+                        // Try multiple ways to get the business name
+                        if (
+                          typeof currentViewReg.brandId === 'object' &&
+                          currentViewReg.brandId?.businessName
+                        ) {
+                          return currentViewReg.brandId.businessName;
+                        }
+                        const brand = brandsById.get(currentViewReg.brandId);
+                        return brand?.businessName || 'Unknown Business';
+                      })()}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Event</p>
-                    <p className="font-medium">
-                      {eventsById.get(currentViewReg.eventId)?.title ||
-                        'Unknown'}
+                    <p className="font-medium capitalize caret-pink-700">
+                      {(() => {
+                        // Try multiple ways to get the event name
+                        if (currentViewReg.eventName) {
+                          return currentViewReg.eventName;
+                        }
+                        if (
+                          typeof currentViewReg.eventId === 'object' &&
+                          currentViewReg.eventId?.title
+                        ) {
+                          return currentViewReg.eventId.title;
+                        }
+                        const event = eventsById.get(currentViewReg.eventId);
+                        return event?.title || 'Unknown Event';
+                      })()}
                     </p>
                   </div>
                 </div>

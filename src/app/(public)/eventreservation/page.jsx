@@ -19,7 +19,7 @@ import { fetchSingleRegistrations } from '@/app/lib/action';
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 
-const EventPage = () => {
+export default function EventReservation() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -395,9 +395,7 @@ const EventPage = () => {
       </div>
     </div>
   );
-};
-
-export default EventPage;
+}
 
 /* ---------- INFO ROW COMPONENT ---------- */
 const InfoRow = ({ icon, label, value }) => {

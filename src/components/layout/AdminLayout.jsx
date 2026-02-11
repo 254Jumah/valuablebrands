@@ -50,6 +50,7 @@ const adminNavItems = [
   { name: 'Awards', path: '/admin/awards', icon: Trophy },
   { name: 'Blog', path: '/admin/blog', icon: FileText },
   { name: 'Media', path: '/admin/media', icon: Image },
+  { name: 'Settings', path: '/admin/settings', icon: Settings },
 ];
 
 export const AdminLayout = ({ children }) => {

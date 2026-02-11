@@ -221,15 +221,54 @@ export const addMember = async (formData) => {
 };
 export const fetchEvents = async () => {
   'use server';
+
   try {
     await connect();
-    const events = await Event.find().sort({ date: 1 }); // ascending order
-    console.log({ events });
-    return events; // Return the array directly
+
+    const now = new Date();
+
+    const events = await Event.aggregate([
+      {
+        $addFields: {
+          isUpcoming: {
+            $cond: [{ $gte: ['$date', now] }, 1, 0],
+          },
+        },
+      },
+      {
+        $sort: {
+          isUpcoming: -1, // upcoming events first
+          date: 1, // closest date first
+        },
+      },
+    ]);
+
+    return events;
   } catch (err) {
     throw new Error('Failed to fetch events!');
   }
 };
+export const fetchUpcomingEvents = async () => {
+  'use server';
+
+  try {
+    await connect();
+
+    const now = new Date();
+
+    const events = await Event.find({
+      date: { $gte: now }, // only future events
+    }).sort({
+      date: 1, // closest date first
+    });
+
+    return events;
+  } catch (err) {
+    throw new Error('Failed to fetch upcoming events!');
+  }
+};
+
+
 export const addEvent = async (data) => {
   'use server';
   await connect();
@@ -318,7 +357,7 @@ export const fetchEventBrands = async () => {
   await connect();
   try {
     const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first
-    console.log({ brands });
+
     return brands;
   } catch (err) {
     throw new Error('Failed to fetch event brands!');
@@ -477,7 +516,7 @@ export const fetchbrands = async () => {
     await connect();
 
     const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first; // Ensure this returns an array
-    console.log({ brands });
+
     return brands; // Return the array directly
   } catch (err) {
     throw new Error('Failed to fetch brands!');
@@ -1538,7 +1577,7 @@ export const fetchRegistrations = async () => {
       .populate('eventId')
       .sort({ createdAt: -1 })
       .lean(); // 🔥 CRITICAL
-    console.log({ registrations });
+
     return registrations;
   } catch (err) {
     console.error(err);
@@ -1563,7 +1602,7 @@ export const fetchSingleRegistrations = async (
       .populate('eventId')
       .sort({ createdAt: -1 })
       .lean(); // 🔥 CRITICAL
-    console.log({ registrations });
+
     return registrations;
   } catch (err) {
     console.error(err);
@@ -2057,7 +2096,6 @@ export const fetchUserswithloan = async () => {
       })
     );
 
-    console.log({ enrichedUsers });
     return enrichedUsers;
   } catch (err) {
     console.error(err);

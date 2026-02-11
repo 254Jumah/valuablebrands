@@ -64,6 +64,7 @@ import {
   fetchEvents,
 } from '@/app/lib/action';
 import useAuth from '@/app/hooks/useAuth';
+import Image from 'next/image';
 
 // Event Form initial state
 const initialEventForm = {
@@ -790,8 +791,6 @@ export default function AdminEvents() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Upcoming">Upcoming</SelectItem>
-                    <SelectItem value="Ongoing">Ongoing</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -868,10 +867,12 @@ export default function AdminEvents() {
                 {/* Event Image - Mobile Optimized */}
                 {selectedEvent.image && (
                   <div className="relative rounded-lg overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 aspect-video">
-                    <img
+                    <Image
                       src={selectedEvent.image}
                       alt={selectedEvent.title}
                       className="w-full h-full object-cover"
+                      width={800}
+                      height={450}
                       onError={(e) => {
                         e.target.style.display = 'none';
                       }}
