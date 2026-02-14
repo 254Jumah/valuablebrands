@@ -54,7 +54,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Remove CRM import and replace with API service
 
@@ -113,7 +114,7 @@ const companyInfo = {
 export default function InvoiceManagement() {
   // State for data
   const [invoices, setInvoices] = useState([]);
-  const [brands, setBrands] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -137,14 +138,9 @@ export default function InvoiceManagement() {
       setLoading(true);
       setError(null);
 
-      // Fetch invoices and brands in parallel
-      const [invoicesData, brandsData] = await Promise.all([
-        fetchInvoices(),
-        fetchbrands(),
-      ]);
-
+      // Only fetch invoices - they contain all needed data
+      const invoicesData = await fetchInvoices();
       setInvoices(invoicesData);
-      setBrands(brandsData);
     } catch (err) {
       console.error('Failed to load data:', err);
       setError('Failed to load invoices. Please try again.');
@@ -154,9 +150,9 @@ export default function InvoiceManagement() {
     }
   };
 
-  const brandsById = useMemo(() => {
-    return new Map(brands.map((b) => [b.id, b]));
-  }, [brands]);
+  useEffect(() => {
+    loadData();
+  }, []);
 
   // Filter invoices
   const filteredInvoices = useMemo(() => {
@@ -167,20 +163,20 @@ export default function InvoiceManagement() {
       )
       .filter((invoice) => {
         if (!q) return true;
-        const brand = brandsById.get(invoice.brandId);
         const haystack = [
-          brand?.businessName,
-          brand?.primaryContact?.name,
-          brand?.primaryContact?.email,
+          invoice.brand?.businessName,
+          invoice.brand?.primaryContact?.name,
+          invoice.brand?.primaryContact?.email,
           invoice.invoiceNumber,
-          invoice.eventName,
+          invoice.event?.title,
+          invoice.package?.name,
         ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
         return haystack.includes(q);
       });
-  }, [invoices, statusFilter, query, brandsById]);
+  }, [invoices, statusFilter, query]);
 
   // Stats calculation
   const stats = useMemo(() => {
@@ -300,10 +296,9 @@ export default function InvoiceManagement() {
 
       // Generate receipt PDF if needed
       if (generateReceipt && receipt) {
-        const brand = brandsById.get(selectedInvoice.brandId);
         downloadReceiptPDF({
           registration: updatedInvoice,
-          brand,
+          brand: updatedInvoice.brand, // Use nested brand
           paymentAmount: amount,
           paymentNote,
           companyInfo,
@@ -328,10 +323,9 @@ export default function InvoiceManagement() {
       );
 
       // Generate receipt PDF
-      const brand = brandsById.get(invoice.brandId);
       downloadReceiptPDF({
         registration: updatedInvoice,
-        brand,
+        brand: updatedInvoice.brand, // Use nested brand
         paymentAmount: updatedInvoice.amountTotal - invoice.amountPaid,
         paymentNote: 'Full balance cleared',
         companyInfo,
@@ -349,10 +343,9 @@ export default function InvoiceManagement() {
   };
 
   const handleDownloadInvoice = (invoice) => {
-    const brand = brandsById.get(invoice.brandId);
     downloadInvoicePDF({
       registration: invoice,
-      brand,
+      brand: invoice.brand, // Pass the nested brand object
       companyInfo,
     });
   };
@@ -372,21 +365,23 @@ export default function InvoiceManagement() {
     );
   }
 
-  // if (error) {
-  //   return (
-  //     <div className="flex items-center justify-center min-h-screen">
-  //       <div className="text-center space-y-4">
-  //         <AlertTriangle className="h-12 w-12 mx-auto text-destructive" />
-  //         <h2 className="text-xl font-semibold">Error Loading Data</h2>
-  //         <p className="text-muted-foreground">{error}</p>
-  //         <Button onClick={handleRetry}>Retry</Button>
-  //       </div>
-  //     </div>
-  //   );
-  // }
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <AlertTriangle className="h-12 w-12 mx-auto text-destructive" />
+          <h2 className="text-xl font-semibold">Error Loading Data</h2>
+          <p className="text-muted-foreground">{error}</p>
+          <Button onClick={handleRetry}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      <ToastContainer position="bottom-center" autoClose={3000} />
+
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground lg:text-3xl">
@@ -542,7 +537,6 @@ export default function InvoiceManagement() {
                 </TableRow>
               ) : (
                 filteredInvoices.map((invoice) => {
-                  const brand = brandsById.get(invoice.brandId);
                   const balance = Math.max(
                     0,
                     invoice.amountTotal - invoice.amountPaid
@@ -551,7 +545,6 @@ export default function InvoiceManagement() {
                     invoice.amountTotal > 0
                       ? (invoice.amountPaid / invoice.amountTotal) * 100
                       : 0;
-
                   return (
                     <TableRow key={invoice.id}>
                       <TableCell>
@@ -562,20 +555,24 @@ export default function InvoiceManagement() {
                       <TableCell>
                         <div className="space-y-1">
                           <div className="font-medium text-foreground">
-                            {brand?.businessName ?? 'Unknown'}
+                            {invoice.brand?.businessName ?? 'Unknown'}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {brand?.primaryContact?.email}
+                            {invoice.brand?.primaryContact?.email}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <span className="text-sm text-foreground">
-                          {invoice.eventName}
+                          {invoice.event?.title}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{invoice.packageTier}</Badge>
+                        <Badge variant="outline">
+                          <Badge variant="outline">
+                            {invoice.package?.name}
+                          </Badge>
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant={badgeForInvoice(invoice.status)}>
@@ -693,26 +690,16 @@ export default function InvoiceManagement() {
                 </h3>
                 <div className="space-y-1">
                   <p className="font-medium text-foreground">
-                    {brandsById.get(selectedInvoice.brandId)?.businessName ??
-                      'Unknown'}
+                    {selectedInvoice?.brand?.businessName ?? 'Unknown'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {
-                      brandsById.get(selectedInvoice.brandId)?.primaryContact
-                        ?.name
-                    }
+                    {selectedInvoice?.brand?.primaryContact?.name}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {
-                      brandsById.get(selectedInvoice.brandId)?.primaryContact
-                        ?.email
-                    }
+                    {selectedInvoice?.brand?.primaryContact?.email}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {
-                      brandsById.get(selectedInvoice.brandId)?.primaryContact
-                        ?.phone
-                    }
+                    {selectedInvoice?.brand?.primaryContact?.phone}
                   </p>
                 </div>
               </div>
@@ -899,6 +886,7 @@ export default function InvoiceManagement() {
       </Sheet>
 
       {/* Payment Dialog */}
+      {/* Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -907,7 +895,7 @@ export default function InvoiceManagement() {
               {selectedInvoice && (
                 <>
                   Recording payment for{' '}
-                  {brandsById.get(selectedInvoice.brandId)?.businessName}
+                  {selectedInvoice.brand?.businessName || 'Unknown Business'}
                   <br />
                   <span className="font-medium">
                     Balance:{' '}

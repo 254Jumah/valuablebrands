@@ -32,6 +32,8 @@ const registrationSchema = new Schema(
       type: String,
       required: true,
     },
+    packages: { type: [String], default: [] },
+    packageId: { type: Schema.Types.ObjectId, ref: 'EventPackage' },
     recordedBy: {
       type: String,
     },

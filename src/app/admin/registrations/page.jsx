@@ -75,7 +75,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 // Import backend API functions
 import {
-  fetchEventBrands as fetchBrands,
+  fetchEventdetails as fetchBrands,
   addRegistration as apiAddRegistration,
   updateRegistration as apiUpdateRegistration,
   deleteRegistration as apiDeleteRegistration,
@@ -86,13 +86,7 @@ import {
 
 import useAuth from '@/app/hooks/useAuth';
 
-const registrationStatuses = [
-  'Lead',
-  'Interested',
-  'Registered',
-  'Attended',
-  'Cancelled',
-];
+const registrationStatuses = ['Lead', 'Interested'];
 
 function badgeForRegistration(status) {
   switch (status) {
@@ -118,7 +112,6 @@ const registrationSchema = z.object({
       z.object({
         packageId: z.string().min(1, 'Package is required'),
         packageTier: z.string().min(1, 'Package tier is required'),
-        // pax is now derived from the package, not stored in form
       })
     )
     .min(1, 'At least one package is required'),
@@ -144,17 +137,20 @@ function emptyFormValues() {
 
 function registrationToFormValues(r) {
   // Handle both old and new format
-  const packages = r.packages || [
-    {
-      packageId: r.packageId,
-      packageTier: r.packageTier,
-      // pax is not included in form state anymore
-    },
-  ];
+  const packages =
+    r.packages ||
+    (r.packageId
+      ? [
+          {
+            packageId: r.packageId,
+            packageTier: r.packageTier,
+          },
+        ]
+      : []);
 
   return {
-    brandId: r.brandId,
-    eventId: r.eventId,
+    brandId: typeof r.brandId === 'object' ? r.brandId._id : r.brandId,
+    eventId: typeof r.eventId === 'object' ? r.eventId._id : r.eventId,
     packages: packages,
     registrationStatus: r.registrationStatus,
     notes: r.notes ?? '',
@@ -352,23 +348,40 @@ export default function AdminRegistrations() {
       )
       .filter((r) => {
         if (!q) return true;
-        const brand = brandsById.get(r.brandId);
-        const event = eventsById.get(r.eventId);
-        const packages = r.packages || [{ packageTier: r.packageTier }];
+
+        // Get brand and event names
+        let brandName = '';
+        if (typeof r.brandId === 'object' && r.brandId?.businessName) {
+          brandName = r.brandId.businessName;
+        } else {
+          const brand = brandsById.get(r.brandId);
+          brandName = brand?.businessName || '';
+        }
+
+        let eventName = '';
+        if (typeof r.eventId === 'object' && r.eventId?.title) {
+          eventName = r.eventId.title;
+        } else {
+          const event = eventsById.get(r.eventId);
+          eventName = event?.title || '';
+        }
+
+        // Get package tiers
+        const packages =
+          r.packages || (r.packageId ? [{ packageTier: r.packageTier }] : []);
         const packageText = packages.map((p) => p.packageTier).join(' ');
 
         const haystack = [
-          event?.title,
-          brand?.businessName,
-          brand?.category,
-          brand?.primaryContact?.name,
-          brand?.primaryContact?.email,
+          eventName,
+          brandName,
+          r.eventName,
           packageText,
           r.notes,
         ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
+
         return haystack.includes(q);
       });
   }, [registrations, statusFilter, query, brandsById, eventsById, loading]);
@@ -387,22 +400,26 @@ export default function AdminRegistrations() {
 
     // Calculate total pax from packages
     const totalPax = registrations.reduce((s, r) => {
-      const packages = r.packages || [
-        {
-          packageId: r.packageId,
-          pax: r.pax, // fallback for old format
-        },
-      ];
+      const packages =
+        r.packages ||
+        (r.packageId
+          ? [
+              {
+                packageId: r.packageId,
+                pax: r.pax,
+              },
+            ]
+          : []);
 
       return (
         s +
         packages.reduce((sum, p) => {
           // If it's new format with packageId, get includedPax from package
           if (p.packageId && packagesById.has(p.packageId)) {
-            return sum + packagesById.get(p.packageId).includedPax;
+            return sum + (packagesById.get(p.packageId).includedPax || 0);
           }
           // Fallback for old format
-          return sum + (p.pax || 0);
+          return sum + (p.pax || r.pax || 0);
         }, 0)
       );
     }, 0);
@@ -463,7 +480,12 @@ export default function AdminRegistrations() {
         );
         toast.success('Registration updated successfully');
       } else {
+        console.log(
+          '📡 Submitting new registration to backend...',
+          registrationData
+        );
         const response = await apiAddRegistration(registrationData);
+
         if (!response.success) {
           throw new Error(response.message);
         }
@@ -587,7 +609,7 @@ export default function AdminRegistrations() {
       </header>
 
       {/* Dashboard Cards - Registration Focused */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
           <>
             <CardSkeleton />
@@ -653,25 +675,6 @@ export default function AdminRegistrations() {
                 </p>
               </CardContent>
             </Card>
-
-            <Card className="border-border/50">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Pax
-                </CardTitle>
-                <div className="rounded-lg bg-purple-100 p-2">
-                  <Users className="h-4 w-4 text-purple-600" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="font-display text-2xl font-bold text-foreground">
-                  {stats.totalPax}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Seats registered
-                </p>
-              </CardContent>
-            </Card>
           </>
         )}
       </section>
@@ -719,7 +722,7 @@ export default function AdminRegistrations() {
                   <TableHead>Business</TableHead>
                   <TableHead>Event</TableHead>
                   <TableHead>Packages</TableHead>
-                  <TableHead>Total Pax</TableHead>
+
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -760,7 +763,7 @@ export default function AdminRegistrations() {
                   <TableHead>Business</TableHead>
                   <TableHead>Event</TableHead>
                   <TableHead>Packages</TableHead>
-                  <TableHead>Total Pax</TableHead>
+
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -768,21 +771,50 @@ export default function AdminRegistrations() {
               </TableHeader>
               <TableBody>
                 {filtered.map((r) => {
-                  const brand = brandsById.get(r.brandId);
-                  const event = eventsById.get(r.eventId);
-                  const packages = r.packages || [
-                    {
-                      packageId: r.packageId,
-                      packageTier: r.packageTier,
-                    },
-                  ];
+                  // Handle brand display
+                  let brandName = 'Unknown Business';
+                  if (
+                    typeof r.brandId === 'object' &&
+                    r.brandId?.businessName
+                  ) {
+                    brandName = r.brandId.businessName;
+                  } else {
+                    const brand = brandsById.get(r.brandId);
+                    brandName = brand?.businessName || 'Unknown Business';
+                  }
 
-                  // Calculate total pax from packages
+                  // Handle event display
+                  let eventName = 'Unknown Event';
+                  if (typeof r.eventId === 'object' && r.eventId?.title) {
+                    eventName = r.eventId.title;
+                  } else {
+                    const event = eventsById.get(r.eventId);
+                    eventName = event?.title || r.eventName || 'Unknown Event';
+                  }
+
+                  // Handle packages - support both old and new format
+                  const packages =
+                    r.packages ||
+                    (r.packageId
+                      ? [
+                          {
+                            packageId: r.packageId,
+                            packageTier: r.packageTier,
+                            pax: r.pax,
+                          },
+                        ]
+                      : []);
+
+                  // Calculate total pax correctly for both formats
                   const totalPax = packages.reduce((sum, p) => {
+                    // New format: get includedPax from package details
                     if (p.packageId && packagesById.has(p.packageId)) {
-                      return sum + packagesById.get(p.packageId).includedPax;
+                      return (
+                        sum + (packagesById.get(p.packageId).includedPax || 0)
+                      );
                     }
-                    return sum + (r.pax || 0); // fallback for old format
+                    // Old format: use stored pax value
+                    return sum + (p.pax || r.pax || 0);
                   }, 0);
 
                   return (
@@ -790,44 +822,59 @@ export default function AdminRegistrations() {
                       <TableCell>
                         <div className="space-y-1">
                           <div className="font-medium text-foreground uppercase">
-                            {brand?.businessName ||
-                              (typeof r.brandId === 'object' &&
-                                r.brandId.businessName) ||
-                              'Unknown Business'}
+                            {brandName}
                           </div>
-                          {brand?.primaryContact?.name && (
-                            <div className="text-xs text-muted-foreground">
-                              {brand.primaryContact.name}
-                            </div>
-                          )}
+                          {typeof r.brandId === 'object' &&
+                            r.brandId?.primaryContactName && (
+                              <div className="text-xs text-muted-foreground">
+                                {r.brandId.primaryContactName}
+                              </div>
+                            )}
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <div className="text-sm text-foreground">
-                          {r.eventName ||
-                            (typeof r.eventId === 'object' &&
-                              r.eventId.title) ||
-                            'Unknown Event'}
+                          {eventName}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          {packages.map((pkg, idx) => {
-                            const pkgDetails = packagesById.get(pkg.packageId);
-                            return (
-                              <Badge
-                                key={idx}
-                                variant="outline"
-                                className="capitalize mr-1"
-                              >
-                                {pkg.packageTier} (
-                                {pkgDetails?.includedPax || r.pax || 0} pax)
-                              </Badge>
-                            );
-                          })}
+                          {packages.length > 0 ? (
+                            packages.map((pkg, idx) => {
+                              const pkgDetails = pkg.packageId
+                                ? packagesById.get(pkg.packageId)
+                                : null;
+                              const paxValue =
+                                pkgDetails?.includedPax ||
+                                pkg.pax ||
+                                r.pax ||
+                                0;
+                              const tierName =
+                                pkg.packageTier ||
+                                pkgDetails?.name ||
+                                'Package';
+
+                              return (
+                                <Badge
+                                  key={idx}
+                                  variant="outline"
+                                  className="capitalize mr-1"
+                                >
+                                  {tierName} ({paxValue} pax)
+                                </Badge>
+                              );
+                            })
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="capitalize mr-1"
+                            >
+                              {r.packageTier || 'Package'} ({r.pax || 0} pax)
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell>{totalPax}</TableCell>
+
                       <TableCell>
                         <Badge
                           variant={badgeForRegistration(r.registrationStatus)}
@@ -927,7 +974,7 @@ export default function AdminRegistrations() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Business</p>
-                    <p className="font-medium caret-pink-600 capitalize">
+                    <p className="font-medium capitalize">
                       {(() => {
                         if (
                           typeof currentViewReg.brandId === 'object' &&
@@ -942,7 +989,7 @@ export default function AdminRegistrations() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Event</p>
-                    <p className="font-medium capitalize caret-pink-700">
+                    <p className="font-medium capitalize">
                       {(() => {
                         if (currentViewReg.eventName) {
                           return currentViewReg.eventName;
@@ -963,32 +1010,57 @@ export default function AdminRegistrations() {
                 <div>
                   <p className="text-xs text-muted-foreground">Packages</p>
                   <div className="space-y-2 mt-1">
-                    {(
-                      currentViewReg.packages || [
-                        {
-                          packageId: currentViewReg.packageId,
-                          packageTier: currentViewReg.packageTier,
-                        },
-                      ]
-                    ).map((pkg, idx) => {
-                      const pkgDetails = packagesById.get(pkg.packageId);
-                      return (
-                        <div key={idx} className="flex items-center gap-2">
+                    {(() => {
+                      const packages =
+                        currentViewReg.packages ||
+                        (currentViewReg.packageId
+                          ? [
+                              {
+                                packageId: currentViewReg.packageId,
+                                packageTier: currentViewReg.packageTier,
+                                pax: currentViewReg.pax,
+                              },
+                            ]
+                          : []);
+
+                      return packages.length > 0 ? (
+                        packages.map((pkg, idx) => {
+                          const pkgDetails = pkg.packageId
+                            ? packagesById.get(pkg.packageId)
+                            : null;
+                          const paxValue =
+                            pkgDetails?.includedPax ||
+                            pkg.pax ||
+                            currentViewReg.pax ||
+                            0;
+                          const tierName =
+                            pkg.packageTier || pkgDetails?.name || 'Package';
+
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <Badge variant="outline" className="capitalize">
+                                {tierName}
+                              </Badge>
+                              <span className="text-sm">{paxValue} pax</span>
+                              {pkgDetails?.price && (
+                                <span className="text-xs text-muted-foreground">
+                                  Ksh {pkgDetails.price.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="flex items-center gap-2">
                           <Badge variant="outline" className="capitalize">
-                            {pkg.packageTier}
+                            {currentViewReg.packageTier || 'Package'}
                           </Badge>
                           <span className="text-sm">
-                            {pkgDetails?.includedPax || currentViewReg.pax || 0}{' '}
-                            pax
+                            {currentViewReg.pax || 0} pax
                           </span>
-                          {pkgDetails?.price && (
-                            <span className="text-xs text-muted-foreground">
-                              Ksh{pkgDetails.price}
-                            </span>
-                          )}
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
 
@@ -1247,7 +1319,8 @@ export default function AdminRegistrations() {
                                 <SelectContent>
                                   {packages.map((pkg) => (
                                     <SelectItem key={pkg._id} value={pkg._id}>
-                                      {pkg.name} - Ksh{pkg.price} (
+                                      {pkg.name} - Ksh
+                                      {pkg.price.toLocaleString()} (
                                       {pkg.includedPax} pax)
                                     </SelectItem>
                                   ))}
@@ -1273,7 +1346,7 @@ export default function AdminRegistrations() {
                                 Price
                               </p>
                               <p className="font-medium">
-                                Ksh{selectedPackage.price}
+                                Ksh {selectedPackage.price.toLocaleString()}
                               </p>
                             </div>
                             {selectedPackage.benefits &&

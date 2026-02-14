@@ -7,7 +7,7 @@ const InvoiceSchema = new mongoose.Schema(
       ref: 'BrandReg',
       required: true,
     },
-    evbentId: {
+    eventId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Event',
       required: true,
@@ -17,14 +17,20 @@ const InvoiceSchema = new mongoose.Schema(
       ref: 'Registration',
       required: true,
     },
+    packageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'EventPackage',
+      required: true,
+    },
     dueDate: {
       type: Date,
       required: true,
     },
-    Amount: { type: Number, required: true },
-    Date: { type: Date, required: true },
+    totalAmount: { type: Number, required: true },
+
+    invoiceDate: { type: Date, required: true },
     recordedBy: { type: String, required: true },
-    PaymentMethod: { type: String, required: true },
+
     invoiceNumber: {
       type: String,
       required: true,
@@ -42,14 +48,6 @@ const InvoiceSchema = new mongoose.Schema(
       type: String,
 
       default: 'unpaid',
-    },
-    packageTier: {
-      type: String,
-      required: true,
-    },
-    pax: {
-      type: Number,
-      required: true,
     },
   },
   { timestamps: true }

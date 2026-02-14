@@ -352,13 +352,28 @@ export const deleteEvent = async (eventId) => {
     };
   }
 };
-export const fetchEventBrands = async () => {
-  'use server';
+export const fetchEventdetails = async (eventId) => {
+  console.log('Fetching brands for event ID:', eventId);
   await connect();
   try {
     const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first
 
     return brands;
+  } catch (err) {
+    throw new Error('Failed to fetch event brands!');
+  }
+};
+export const fetchEventBrands = async (eventId) => {
+  await connect();
+
+  try {
+    const registrations = await Registration.find({ eventId })
+      .populate('brandId') // 🔥 get full brand details
+      .populate('eventId') // optional
+      .sort({ createdAt: -1 })
+      .lean();
+    console.log('Fetched registrations:', registrations); // ✅ DEBUG LOG
+    return registrations;
   } catch (err) {
     throw new Error('Failed to fetch event brands!');
   }
@@ -562,12 +577,15 @@ export const addRegistration = async (registrationData) => {
       };
     }
 
-    // 📥 FETCH BRAND + EVENT
+    // 📥 FETCH BRAND + EVENT + PACKAGE
     const brand = await BrandReg.findById(registrationData.brandId).lean();
     const event = await Event.findById(registrationData.eventId).lean();
+    const selectedPackage = await EventPackage.findById(
+      registrationData.packageId
+    ).lean();
 
-    if (!brand || !event) {
-      return { success: false, message: 'Brand or event not found' };
+    if (!brand || !event || !selectedPackage) {
+      return { success: false, message: 'Brand, event, or package not found' };
     }
 
     // 📝 CREATE REGISTRATION
@@ -576,12 +594,38 @@ export const addRegistration = async (registrationData) => {
       eventId: registrationData.eventId,
       notes: registrationData.notes,
       pax: registrationData.pax,
-      packageTier: registrationData.packageTier,
       registrationStatus: registrationData.registrationStatus,
       recordedBy: registrationData.recordedBy || 'system',
+      packageTier: registrationData.packageTier,
+      packageId: selectedPackage._id,
+      packageName: selectedPackage.name, // 👈 store snapshot
+      packagePrice: selectedPackage.price, // 👈 store snapshot
+    });
+    // 🧾 GENERATE INVOICE NUMBER
+    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+
+    // 📅 SET DUE DATE (7 days from today)
+    const today = new Date();
+    const dueDate = new Date();
+    dueDate.setDate(today.getDate() + 7);
+
+    // 💰 CREATE INVOICE
+    const invoice = await Invoice.create({
+      brandId: brand._id,
+      eventId: event._id, // ✅ fixed typo
+      registrationId: registration._id,
+      packageId: selectedPackage._id,
+      dueDate: dueDate,
+      invoiceDate: today,
+      recordedBy: registrationData.recordedBy || 'system',
+      invoiceNumber,
+      invoiceStatus: selectedPackage.price === 0 ? 'paid' : 'unpaid',
+      totalAmount: selectedPackage.price,
+
+      payments: [],
     });
 
-    // 🌍 BUILD QR URL (CARRIES DATA)
+    // 🌍 BUILD QR URL
     const buildQrUrl = () => {
       const baseUrl = process.env.PUBLIC_APP_URL || 'https://yourdomain.com';
 
@@ -645,35 +689,23 @@ export const addRegistration = async (registrationData) => {
         doc.setFontSize(13);
         doc.text(title, margin + 6, y);
         y += 6;
-        doc.setDrawColor(200);
         doc.line(margin + 6, y, pageWidth - margin - 6, y);
         y += 8;
       };
 
       // EVENT DETAILS
       section('EVENT DETAILS');
-      doc.setFontSize(11);
 
       [
         ['Event', event.title],
-        [
-          'Date',
-          event.date
-            ? new Date(event.date).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })
-            : 'TBA',
-        ],
-        ['Location', event.location || 'To be announced'],
-        ['Seats', `${registrationData.pax}`],
-      ].forEach(([l, v]) => {
+        ['Date', new Date(event.date).toLocaleDateString()],
+        ['Location', event.location || 'TBA'],
+        ['Seats Reserved', `${registration.pax}`],
+      ].forEach(([label, value]) => {
         doc.setFont('helvetica', 'bold');
-        doc.text(`${l}:`, margin + 6, y);
+        doc.text(`${label}:`, margin + 6, y);
         doc.setFont('helvetica', 'normal');
-        doc.text(v, margin + 42, y);
+        doc.text(String(value), margin + 42, y);
         y += 7;
       });
 
@@ -686,64 +718,47 @@ export const addRegistration = async (registrationData) => {
         ['Contact', brand.primaryContactName || 'N/A'],
         ['Email', brand.primaryContactEmail],
         ['Phone', brand.primaryContactPhone || 'N/A'],
-      ].forEach(([l, v]) => {
+      ].forEach(([label, value]) => {
         doc.setFont('helvetica', 'bold');
-        doc.text(`${l}:`, margin + 6, y);
+        doc.text(`${label}:`, margin + 6, y);
         doc.setFont('helvetica', 'normal');
-        doc.text(v, margin + 42, y);
+        doc.text(String(value), margin + 42, y);
         y += 7;
       });
 
-      // PACKAGE
+      // PACKAGE DETAILS (🔥 FROM DATABASE)
       y += 4;
       section('PACKAGE DETAILS');
 
       doc.setFontSize(12);
-      doc.text(
-        `Selected Package: ${registrationData.packageTier}`,
-        margin + 6,
-        y
-      );
-      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Package: ${selectedPackage.name}`, margin + 6, y);
+      y += 7;
 
-      const packageFeatures = {
-        Bronze: ['Standard seating', 'Basic networking'],
-        Silver: ['Priority seating', 'Swag bag'],
-        Gold: ['VIP seating', 'Exclusive access'],
-      };
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Price: Ksh${selectedPackage.price}`, margin + 6, y);
+      y += 7;
 
-      doc.setFontSize(11);
-      (packageFeatures[registrationData.packageTier] || []).forEach((f) => {
-        doc.text(`• ${f}`, margin + 12, y);
+      doc.text(`Included Pax: ${selectedPackage.includedPax}`, margin + 6, y);
+      y += 10;
+
+      // ✅ Real Benefits From DB
+      doc.setFont('helvetica', 'bold');
+      doc.text('Benefits:', margin + 6, y);
+      y += 7;
+
+      doc.setFont('helvetica', 'normal');
+
+      selectedPackage.benefits.forEach((benefit) => {
+        doc.text(`• ${benefit}`, margin + 12, y);
         y += 6;
       });
 
       // QR CODE
       const qrUrl = buildQrUrl();
-      const qrImage = await QRCode.toDataURL(qrUrl, {
-        margin: 1,
-        width: 200,
-      });
+      const qrImage = await QRCode.toDataURL(qrUrl);
 
-      doc.setFont('helvetica', 'bold');
-      doc.text('SCAN TO VIEW REGISTRATION', pageWidth - margin - 62, y - 8);
-
-      doc.addImage(qrImage, 'PNG', pageWidth - margin - 62, y, 45, 45);
-
-      // FOOTER
-      doc.setFontSize(9);
-      doc.setTextColor(120);
-      doc.text(
-        `Generated on ${new Date().toLocaleDateString()}`,
-        margin,
-        pageHeight - 16
-      );
-      doc.text(
-        '© EVENT MANAGEMENT SYSTEM',
-        pageWidth - margin,
-        pageHeight - 16,
-        { align: 'right' }
-      );
+      doc.addImage(qrImage, 'PNG', pageWidth - margin - 60, y - 40, 45, 45);
 
       return doc.output('arraybuffer');
     };
@@ -752,26 +767,15 @@ export const addRegistration = async (registrationData) => {
     const pdfBase64 = Buffer.from(pdfBuffer).toString('base64');
 
     // 📧 EMAIL
-    const BRAND_NAME = brand.businessName.toUpperCase();
-
     await transporter.sendMail({
       from: `EVENT MANAGEMENT <${process.env.EMAIL_USER}>`,
       to: brand.primaryContactEmail,
-      subject: `✅ REGISTRATION CONFIRMED — ${BRAND_NAME}`,
+      subject: `✅ REGISTRATION CONFIRMED — ${brand.businessName}`,
       html: `
-        <h2>🎉 REGISTRATION CONFIRMED</h2>
-        <p>Dear <strong>${brand.primaryContactName || BRAND_NAME}</strong>,</p>
-        <p>
-          The registration of <strong>${BRAND_NAME}</strong> for
-          <strong>${event.title}</strong> has been successfully completed.
-        </p>
-        <p>
-          Attached is your official confirmation PDF containing a
-          <strong>QR code</strong>. Scanning it will take you directly to your
-          registration page with all details.
-        </p>
-        <p>— Event Management Team</p>
-        <small>This is an automated message.</small>
+        <h2>🎉 Registration Confirmed</h2>
+        <p>Your registration for <strong>${event.title}</strong> is confirmed.</p>
+        <p>Selected Package: <strong>${selectedPackage.name}</strong></p>
+        <p>Please find your confirmation PDF attached.</p>
       `,
       attachments: [
         {
@@ -785,7 +789,7 @@ export const addRegistration = async (registrationData) => {
     return {
       success: true,
       data: registration,
-      message: 'Registration completed with premium PDF & QR',
+      message: 'Registration completed successfully',
     };
   } catch (error) {
     console.error(error);
@@ -1575,6 +1579,7 @@ export const fetchRegistrations = async () => {
     const registrations = await Registration.find()
       .populate('brandId')
       .populate('eventId')
+      .populate('packageId') // Populate recordedBy with name and email
       .sort({ createdAt: -1 })
       .lean(); // 🔥 CRITICAL
 
@@ -1751,9 +1756,100 @@ export const fetchInvoices = async () => {
   await connect();
   try {
     const invoices = await Invoice.find()
-      .populate('brandId', 'businessName')
+      .populate({
+        path: 'brandId',
+        model: 'BrandReg',
+        select:
+          'businessName primaryContactName primaryContactEmail primaryContactPhone address city country',
+      })
+      .populate({
+        path: 'eventId',
+        model: 'Event',
+        select: 'title date location',
+      })
+      .populate({
+        path: 'packageId',
+        model: 'EventPackage',
+        select: 'name price includedPax benefits',
+      })
+      .populate('registrationId')
+      .sort({ createdAt: -1 }) // Most recent first
       .lean();
-    return invoices;
+
+    // Transform the data to match what the UI expects
+    const transformedInvoices = invoices.map((invoice) => {
+      // Calculate total paid from payments array
+      const amountPaid =
+        invoice.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+
+      return {
+        id: invoice._id.toString(),
+        invoiceNumber: invoice.invoiceNumber || '—',
+        dueDate: invoice.dueDate,
+        amountTotal: invoice.totalAmount || 0,
+        amountPaid,
+        status: invoice.invoiceStatus || 'Not sent',
+        invoiceDate: invoice.invoiceDate,
+        recordedBy: invoice.recordedBy,
+        payments: invoice.payments || [],
+        createdAt: invoice.createdAt,
+        updatedAt: invoice.updatedAt,
+
+        // Brand information (directly from populated data)
+        brand: invoice.brandId
+          ? {
+              id: invoice.brandId._id.toString(),
+              businessName: invoice.brandId.businessName || 'Unknown Business',
+              primaryContact: {
+                name: invoice.brandId.primaryContactName,
+                email: invoice.brandId.primaryContactEmail,
+                phone: invoice.brandId.primaryContactPhone,
+              },
+              address: invoice.brandId.address,
+              city: invoice.brandId.city,
+              country: invoice.brandId.country,
+            }
+          : null,
+
+        // Event information
+        event: invoice.eventId
+          ? {
+              id: invoice.eventId._id.toString(),
+              title: invoice.eventId.title || 'Unknown Event',
+              date: invoice.eventId.date,
+              location: invoice.eventId.location,
+            }
+          : null,
+
+        // Package information
+        package: invoice.packageId
+          ? {
+              id: invoice.packageId._id.toString(),
+              name: invoice.packageId.name || 'Unknown Package',
+              price: invoice.packageId.price,
+              includedPax: invoice.packageId.includedPax || 0,
+              benefits: invoice.packageId.benefits || [],
+            }
+          : null,
+
+        // For backward compatibility with existing UI code
+        businessName: invoice.brandId?.businessName || 'Unknown Business',
+        primaryContact: invoice.brandId
+          ? {
+              name: invoice.brandId.primaryContactName,
+              email: invoice.brandId.primaryContactEmail,
+              phone: invoice.brandId.primaryContactPhone,
+            }
+          : { name: '', email: '', phone: '' },
+        eventName: invoice.eventId?.title || 'Unknown Event',
+        eventLocation: invoice.eventId?.location,
+        eventDate: invoice.eventId?.date,
+        packageTier: invoice.packageId?.name || 'Unknown Package',
+        pax: invoice.packageId?.includedPax || 0,
+      };
+    });
+
+    return transformedInvoices;
   } catch (error) {
     console.error('❌ fetchInvoices error:', error);
     throw new Error('Failed to fetch invoices');

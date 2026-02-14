@@ -100,6 +100,7 @@ export default function AdminEvents() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [eventBrands, setEventBrands] = useState([]);
+  console.log('Selected Event Brands:', eventBrands);
   const [loadingBrands, setLoadingBrands] = useState(false);
 
   // Delete modal state
@@ -983,18 +984,20 @@ export default function AdminEvents() {
                     </div>
                   )}
 
-                  {selectedEvent.price > 0 && (
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                      <h3 className="font-semibold text-sm mb-2">
-                        Ticket Price
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-green-700">
-                          KES {selectedEvent.price.toLocaleString()}
-                        </span>
-                      </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-sm mb-2">
+                      Total Booked Seats
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-green-700">
+                        {' '}
+                        {eventBrands
+                          .reduce((total, brand) => total + (brand.pax || 0), 0)
+                          .toLocaleString()}{' '}
+                        Attendees
+                      </span>
                     </div>
-                  )}
+                  </div>
 
                   {selectedEvent.youtubeUrl && (
                     <div className="col-span-2">
@@ -1052,6 +1055,9 @@ export default function AdminEvents() {
                                 Business
                               </th>
                               <th className="text-left p-3 font-medium">
+                                Package
+                              </th>
+                              <th className="text-left p-3 font-medium">
                                 Contact
                               </th>
                               <th className="text-left p-3 font-medium">
@@ -1068,18 +1074,29 @@ export default function AdminEvents() {
                                 <td className="p-3">
                                   <div>
                                     <p className="font-medium">
-                                      {brand.businessName}
+                                      {brand.brandId?.businessName ||
+                                        'Unknown Brand'}
                                     </p>
                                     <p className="text-xs text-gray-600">
-                                      {brand.primaryContactEmail}
+                                      {brand.brandId?.primaryContactEmail}
                                     </p>
                                   </div>
                                 </td>
                                 <td className="p-3">
                                   <div>
-                                    <p>{brand.primaryContactName}</p>
+                                    <p className="font-medium">
+                                      {brand.packageTier || 'Unknown Brand'}
+                                    </p>
                                     <p className="text-xs text-gray-600">
-                                      {brand.primaryContactPhone}
+                                      Pax:{brand?.pax}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <div>
+                                    <p>{brand.brandId?.primaryContactName}</p>
+                                    <p className="text-xs text-gray-600">
+                                      {brand.brandId?.primaryContactPhone}
                                     </p>
                                   </div>
                                 </td>
@@ -1091,13 +1108,13 @@ export default function AdminEvents() {
                                         : 'outline'
                                     }
                                     className={`
-                                      ${brand.status === 'Confirmed' ? 'bg-green-100 text-green-800 border-green-200' : ''}
-                                      ${brand.status === 'Pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : ''}
-                                      ${brand.status === 'Cancelled' ? 'bg-red-100 text-red-800 border-red-200' : ''}
+                                      ${brand.brandId?.status === 'Active' ? 'bg-green-100 text-green-800 border-green-200' : ''}
+                                      ${brand.brandId?.status === 'Pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : ''}
+                                      ${brand.brandId?.status === 'Cancelled' ? 'bg-red-100 text-red-800 border-red-200' : ''}
                                       text-xs
                                     `}
                                   >
-                                    {brand.status}
+                                    {brand.brandId?.status || brand.status}
                                   </Badge>
                                 </td>
                               </tr>
