@@ -249,6 +249,130 @@ export const fetchEvents = async () => {
     throw new Error('Failed to fetch events!');
   }
 };
+export const checkInAttendee = async (registrationId) => {
+  'use server';
+  await connect();
+  try {
+    const registration = await Registration.findById(registrationId)
+      .populate('brandId')
+      .populate('eventId');
+    if (!registration) {
+      throw new Error('Registration not found');
+    }
+    registration.checkedIn = true;
+    await registration.save();
+    return { success: true, message: 'Attendee checked in successfully' };
+  } catch (error) {
+    console.error('Error checking in attendee:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to check in attendee',
+    };
+  }
+};
+export const getAttendees = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const attendees = await Registration.find({ eventId }).populate('brandId');
+    return attendees;
+  } catch (error) {
+    throw new Error('Failed to fetch attendees!');
+  }
+};
+export const getEvent = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const event = await Event.findById(eventId);
+
+    // Convert MongoDB document to plain object
+    return JSON.parse(JSON.stringify(event));
+  } catch (error) {
+    throw new Error('Failed to fetch event details!');
+  }
+};
+export const getEventStats = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const attendees = await Registration.countDocuments({ eventId });
+    const checkedIn = await Registration.countDocuments({
+      eventId,
+      checkedIn: true,
+    });
+    return { attendees, checkedIn };
+  } catch (error) {
+    throw new Error('Failed to fetch event stats!');
+  }
+};
+export const markNoShow = async (registrationId) => {
+  'use server';
+  await connect();
+  try {
+    const registration = await Registration.findById(registrationId);
+    if (!registration) {
+      throw new Error('Registration not found');
+    }
+    registration.noShow = true;
+    await registration.save();
+    return {
+      success: true,
+      message: 'Attendee marked as no-show successfully',
+    };
+  } catch (error) {
+    console.error('Error marking attendee as no-show:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to mark attendee as no-show',
+    };
+  }
+};
+export const registerWalkIn = async (data) => {
+  'use server';
+  await connect();
+  try {
+    const registration = await Registration.create({
+      brandId: data.brandId,
+      eventId: data.eventId,
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      walkIn: true, // explicitly set walkIn flag
+    });
+    return {
+      success: true,
+      message: 'Walk-in attendee registered successfully',
+      data: registration,
+    };
+  } catch (error) {
+    console.error('❌ registerWalkIn error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to register walk-in attendee',
+    };
+  }
+};
+export const undoCheckIn = async (registrationId) => {
+  'use server';
+  await connect();
+  try {
+    const registration = await Registration.findById(registrationId);
+    if (!registration) {
+      throw new Error('Registration not found');
+    }
+    registration.checkedIn = false;
+    await registration.save();
+    return { success: true, message: 'Attendee check-in undone successfully' };
+  } catch (error) {
+    console.error('Error undoing check-in:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to undo check-in',
+    };
+  }
+};
+
 export const fetchUpcomingEvents = async () => {
   'use server';
 

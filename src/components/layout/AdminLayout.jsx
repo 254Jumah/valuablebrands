@@ -17,6 +17,8 @@ import {
   Banknote,
   BarChart3,
   MessageSquare,
+  ClipboardCheck,
+  Users,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -36,17 +38,18 @@ import useAuth from '@/app/hooks/useAuth';
 const adminNavItems = [
   { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
   { name: 'Events', path: '/admin/events', icon: Calendar },
+  { name: 'Event Check-in', path: '/admin/checkin', icon: ClipboardCheck },
   { name: 'Brands', path: '/admin/brands', icon: Building2 },
   { name: 'Registrations', path: '/admin/registrations', icon: Banknote },
-  { name: 'Finance', path: '/admin/Finance', icon: Banknote },
   { name: 'Invoices', path: '/admin/invoices', icon: FileText },
   {
     name: 'Communications',
     path: '/admin/communications',
     icon: MessageSquare,
   },
+  { name: 'Finance', path: '/admin/finance', icon: Banknote },
   { name: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
-  { name: 'Team', path: '/admin/team', icon: Building2 },
+  { name: 'Team', path: '/admin/team', icon: Users },
   { name: 'Awards', path: '/admin/awards', icon: Trophy },
   { name: 'Blog', path: '/admin/blog', icon: FileText },
   { name: 'Media', path: '/admin/media', icon: Image },
