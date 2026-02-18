@@ -535,67 +535,55 @@ export default function EventCheckin() {
     }
   };
 
+  // In your frontend handleDownloadTemplate:
   const handleDownloadTemplate = async () => {
     try {
-      const template = await downloadAttendeeTemplate();
+      if (!selectedEventId) {
+        toast.error('Please select an event first');
+        return;
+      }
 
-      // Create workbook
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(template);
+      if (!selectedBrand) {
+        toast.error('Please select a registration/brand first');
+        return;
+      }
 
-      // Add instructions sheet
-      const instructions = [
-        {
-          Field: 'brandName',
-          Required: 'Yes',
-          Description: 'Name of the brand/company',
-        },
-        {
-          Field: 'attendeeName',
-          Required: 'Yes',
-          Description: 'Full name of attendee',
-        },
-        {
-          Field: 'attendeeEmail',
-          Required: 'No',
-          Description: 'Email address',
-        },
-        {
-          Field: 'attendeePhone',
-          Required: 'Yes',
-          Description: 'Phone number',
-        },
-        {
-          Field: 'packageTier',
-          Required: 'Yes',
-          Description: 'Standard, VIP, Exhibitor, Speaker',
-        },
-        {
-          Field: 'jobTitle',
-          Required: 'No',
-          Description: 'Attendee job title',
-        },
-        {
-          Field: 'tableNumber',
-          Required: 'No',
-          Description: 'Assigned table/seat',
-        },
-        { Field: 'notes', Required: 'No', Description: 'Any special notes' },
-      ];
+      setActionLoading(true);
 
-      const wsInstructions = XLSX.utils.json_to_sheet(instructions);
+      const buffer = await downloadAttendeeTemplate(
+        selectedEventId,
+        selectedBrand._id
+      );
 
-      XLSX.utils.book_append_sheet(wb, ws, 'Template');
-      XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
 
-      XLSX.writeFile(wb, 'attendee_upload_template.xlsx');
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
 
-      toast.success('Template downloaded successfully');
+      // Create filename with brand name, package, and date
+      const brandName =
+        selectedBrand.brandId?.businessName?.replace(/\s+/g, '_') || 'brand';
+      const packageTier = selectedBrand.packageTier || 'package';
+      const date = new Date().toISOString().split('T')[0];
+
+      link.href = url;
+      link.download = `${brandName}_${packageTier}_attendees_${date}.xlsx`;
+      link.click();
+
+      window.URL.revokeObjectURL(url);
+
+      toast.success(
+        `Template downloaded for ${selectedBrand.brandId?.businessName}`
+      );
     } catch (error) {
-      toast.error('Failed to download template');
+      console.log('Frontend caught error:', error);
+      toast.error(error.message);
+    } finally {
+      setActionLoading(false);
     }
   };
-
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -970,28 +958,81 @@ export default function EventCheckin() {
                 </div>
                 <div className="flex gap-2">
                   <Sheet open={bulkUploadOpen} onOpenChange={setBulkUploadOpen}>
-                    <SheetTrigger asChild>
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="gap-2"
-                        disabled={actionLoading || !canCheckIn}
-                      >
-                        <Upload className="h-5 w-5" />
-                        Bulk Upload
-                      </Button>
-                    </SheetTrigger>
                     <SheetContent className="overflow-y-auto sm:max-w-xl">
                       <SheetHeader>
                         <SheetTitle>Bulk Upload Attendees</SheetTitle>
                         <SheetDescription>
-                          Upload multiple attendees using Excel file
+                          Upload multiple attendees using Excel file. Download
+                          template first, fill it with attendee data, then
+                          upload.
                         </SheetDescription>
                       </SheetHeader>
+
                       <div className="space-y-6 mt-6">
+                        {/* Brand Selection Card */}
                         <Card>
-                          <CardHeader>
-                            <CardTitle className="text-sm">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <Building2 className="h-4 w-4" />
+                              Select Brand
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <Select
+                              value={selectedBrand?._id}
+                              onValueChange={(value) => {
+                                const brand = registrations.find(
+                                  (r) => r._id === value
+                                );
+                                setSelectedBrand(brand);
+                                // Reset file upload when brand changes
+                                setUploadFile(null);
+                                setUploadProgress(null);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose a brand for template" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {registrations.length === 0 ? (
+                                  <div className="p-2 text-sm text-muted-foreground text-center">
+                                    No brands available
+                                  </div>
+                                ) : (
+                                  registrations.map((reg) => (
+                                    <SelectItem key={reg._id} value={reg._id}>
+                                      <div className="flex items-center justify-between w-full">
+                                        <span>
+                                          {reg.brandId?.businessName ||
+                                            'Unknown Brand'}
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className="ml-2"
+                                        >
+                                          {reg.packageTier}
+                                        </Badge>
+                                      </div>
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+
+                            {selectedBrand && (
+                              <div className="mt-3 text-sm text-muted-foreground">
+                                <p>Package: {selectedBrand.packageTier}</p>
+                                <p>Expected PAX: {selectedBrand.pax}</p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        {/* Template Download Card */}
+                        <Card>
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <FileSpreadsheet className="h-4 w-4" />
                               Step 1: Download Template
                             </CardTitle>
                           </CardHeader>
@@ -1000,40 +1041,158 @@ export default function EventCheckin() {
                               onClick={handleDownloadTemplate}
                               variant="outline"
                               className="w-full gap-2"
+                              disabled={!selectedBrand || actionLoading}
                             >
-                              <Download className="h-4 w-4" />
+                              {actionLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
                               Download Excel Template
+                              {selectedBrand?.brandId?.businessName &&
+                                ` for ${selectedBrand.brandId.businessName}`}
                             </Button>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Template includes required columns: brandName,
-                              attendeeName, attendeePhone, packageTier
-                            </p>
+
+                            <div className="mt-3 space-y-2">
+                              <p className="text-xs text-muted-foreground">
+                                Template includes:
+                              </p>
+                              <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
+                                <li>Brand name pre-filled (locked column)</li>
+                                <li>Required columns: Name *, Phone *</li>
+                                <li>Optional: Email, Job Title</li>
+                                <li>100 blank rows for attendees</li>
+                              </ul>
+                            </div>
                           </CardContent>
                         </Card>
 
+                        {/* File Upload Card */}
                         <Card>
-                          <CardHeader>
-                            <CardTitle className="text-sm">
-                              Step 2: Upload File
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <Upload className="h-4 w-4" />
+                              Step 2: Upload Filled Template
                             </CardTitle>
                           </CardHeader>
                           <CardContent>
-                            <Input
-                              type="file"
-                              accept=".xlsx,.xls,.csv"
-                              onChange={handleFileUpload}
-                              disabled={actionLoading}
-                            />
-                            {uploadProgress && (
-                              <div className="flex items-center gap-2 mt-4">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                <span className="text-sm">
-                                  {uploadProgress}
-                                </span>
+                            <div className="space-y-4">
+                              <Input
+                                type="file"
+                                accept=".xlsx,.xls,.csv"
+                                onChange={handleFileUpload}
+                                disabled={actionLoading || !selectedBrand}
+                                className="cursor-pointer"
+                              />
+
+                              {/* File info */}
+                              {uploadFile && (
+                                <div className="flex items-center justify-between text-sm p-2 bg-muted rounded-md">
+                                  <span className="truncate max-w-[200px]">
+                                    {uploadFile.name}
+                                  </span>
+                                  <Badge variant="outline">
+                                    {(uploadFile.size / 1024).toFixed(1)} KB
+                                  </Badge>
+                                </div>
+                              )}
+
+                              {/* Progress indicator */}
+                              {uploadProgress && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>{uploadProgress}</span>
+                                  </div>
+                                  <Progress
+                                    value={uploadProgress.progress}
+                                    className="h-2"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Instructions */}
+                              <div className="border-t pt-3">
+                                <p className="text-xs font-medium mb-2">
+                                  Instructions:
+                                </p>
+                                <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
+                                  <li>
+                                    Fill only the unlocked columns (Name, Email,
+                                    Phone, Job Title)
+                                  </li>
+                                  <li>
+                                    Brand Name column is locked and pre-filled
+                                  </li>
+                                  <li>
+                                    Phone number is required for each attendee
+                                  </li>
+                                  <li>Maximum 100 attendees per upload</li>
+                                  <li>Save file as .xlsx format</li>
+                                </ul>
                               </div>
-                            )}
+
+                              {/* Sample format */}
+                              <div className="bg-muted/50 rounded-md p-3">
+                                <p className="text-xs font-medium mb-2">
+                                  Sample format:
+                                </p>
+                                <table className="text-xs w-full">
+                                  <thead>
+                                    <tr className="border-b">
+                                      <th className="text-left py-1">Name *</th>
+                                      <th className="text-left py-1">Email</th>
+                                      <th className="text-left py-1">
+                                        Phone *
+                                      </th>
+                                      <th className="text-left py-1">
+                                        Job Title
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr>
+                                      <td className="py-1">John Doe</td>
+                                      <td className="py-1">john@email.com</td>
+                                      <td className="py-1">0712345678</td>
+                                      <td className="py-1">Manager</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </CardContent>
                         </Card>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 pt-4 border-t">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setBulkUploadOpen(false);
+                              setUploadFile(null);
+                              setUploadProgress(null);
+                              setSelectedBrand(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            className="flex-1 gap-2"
+                            onClick={handleFileUpload}
+                            disabled={
+                              !uploadFile || actionLoading || !selectedBrand
+                            }
+                          >
+                            {actionLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4" />
+                            )}
+                            Upload & Process
+                          </Button>
+                        </div>
                       </div>
                     </SheetContent>
                   </Sheet>

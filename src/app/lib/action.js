@@ -347,32 +347,95 @@ export const getBrandAttendees = async (eventId) => {
     throw new Error('Failed to fetch brand attendees!');
   }
 };
-export const bulkUploadAttendees = async (eventId, fileBuffer) => {
-  'use server';
-  await connect();
+// export const bulkUploadAttendees = async (eventId, fileBuffer) => {
+//   'use server';
+//   await connect();
+//   try {
+//     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+//     const sheetName = workbook.SheetNames[0];
+//     const sheet = workbook.Sheets[sheetName];
+//     const rows = XLSX.utils.sheet_to_json(sheet);
+//     const registrations = rows.map((row) => ({
+//       eventId,
+//       brandId: row.brandId, // Ensure your Excel has this column
+//       name: row.name,
+//       email: row.email,
+//       phone: row.phone,
+//       jobTitle: row.jobTitle,
+//     }));
+//     await Registration.insertMany(registrations);
+//     return { success: true, message: 'Attendees uploaded successfully' };
+//   } catch (error) {
+//     console.error('Error uploading attendees:', error);
+//     return {
+//       success: false,
+//       message: error.message || 'Failed to upload attendees',
+//     };
+//   }
+// };
+
+export const bulkUploadAttendees = async (fileBuffer, eventId) => {
   try {
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet);
-    const registrations = rows.map((row) => ({
-      eventId,
-      brandId: row.brandId, // Ensure your Excel has this column
-      name: row.name,
-      email: row.email,
-      phone: row.phone,
-      jobTitle: row.jobTitle,
-    }));
-    await Registration.insertMany(registrations);
-    return { success: true, message: 'Attendees uploaded successfully' };
-  } catch (error) {
-    console.error('Error uploading attendees:', error);
+    await connect();
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(fileBuffer);
+
+    const sheet = workbook.getWorksheet('Attendees');
+
+    const results = [];
+    const errors = [];
+
+    for (let i = 2; i <= sheet.rowCount; i++) {
+      const row = sheet.getRow(i);
+
+      const brandName = row.getCell(1).value;
+      const name = row.getCell(2).value;
+      const email = row.getCell(3).value;
+      const phone = row.getCell(4).value;
+      const jobTitle = row.getCell(5).value;
+
+      if (!brandName && !name) continue; // skip empty row
+
+      // Find brand
+      const brand = await Registration.findOne({
+        eventId,
+        brandName,
+      });
+
+      if (!brand) {
+        errors.push(`Row ${i}: Brand "${brandName}" not found`);
+        continue;
+      }
+
+      try {
+        await Attendee.create({
+          registrationId: brand._id,
+          eventId,
+          brandId: brand._id,
+          name,
+          email,
+          phone,
+          jobTitle,
+        });
+
+        results.push(`Row ${i}: Imported`);
+      } catch (err) {
+        errors.push(`Row ${i}: Failed to save`);
+      }
+    }
+
     return {
-      success: false,
-      message: error.message || 'Failed to upload attendees',
+      success: true,
+      imported: results.length,
+      errors,
     };
+  } catch (error) {
+    console.error(error);
+    throw new Error('Failed to upload attendees');
   }
 };
+
 export const createBrand = async (data) => {
   'use server';
   await connect();
@@ -407,27 +470,357 @@ export const createBrand = async (data) => {
     };
   }
 };
+// incase crush refere here down
 
-export const downloadAttendeeTemplate = async (eventId) => {
-  'use server';
+// export const downloadAttendeeTemplate = async (eventId, brandId) => {
+//   try {
+//     console.log('📥 downloadAttendeeTemplate called');
+//     console.log('➡ Event ID:', eventId);
+//     console.log('➡ Brand ID:', brandId);
 
+//     // 1️⃣ Validate
+//     if (!eventId) {
+//       throw new Error('No event selected.');
+//     }
+
+//     if (!brandId) {
+//       throw new Error('No brand selected.');
+//     }
+
+//     await connect();
+
+//     // 2️⃣ Get Registration with populated brand data
+//     const registration = await Registration.findOne({
+//       _id: brandId,
+//       eventId,
+//     }).populate('brandId'); // 👈 Add this to get the brand details
+
+//     if (!registration) {
+//       throw new Error('Registration not found for this event.');
+//     }
+
+//     // Get the brand name from the populated brandId
+//     const brandName = registration.brandId?.businessName || 'Unknown Brand';
+//     console.log('✅ Registration found for brand:', brandName);
+
+//     const workbook = new ExcelJS.Workbook();
+//     const sheet = workbook.addWorksheet('Attendees');
+
+//     sheet.columns = [
+//       { header: 'Brand Name', key: 'brandName', width: 30 },
+//       { header: 'Name *', key: 'name', width: 30 },
+//       { header: 'Email', key: 'email', width: 30 },
+//       { header: 'Phone *', key: 'phone', width: 20 },
+//       { header: 'Job Title', key: 'jobTitle', width: 30 },
+//     ];
+
+//     // Bold header
+//     sheet.getRow(1).font = { bold: true };
+
+//     // Freeze header row
+//     sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+//     // 3️⃣ Add 100 rows with Brand pre-filled
+//     for (let i = 0; i < 100; i++) {
+//       sheet.addRow({
+//         brandName: brandName, // Use the populated brand name
+//       });
+//     }
+
+//     // 4️⃣ Lock Brand column
+//     sheet.getColumn('brandName').eachCell((cell, rowNumber) => {
+//       if (rowNumber > 1) {
+//         cell.protection = { locked: true };
+//       }
+//     });
+
+//     // Protect sheet (so locked cells cannot be edited)
+//     await sheet.protect('secure-template', {
+//       selectLockedCells: false,
+//       selectUnlockedCells: true,
+//     });
+
+//     const buffer = await workbook.xlsx.writeBuffer();
+
+//     console.log('✅ Template generated successfully');
+
+//     return buffer;
+//   } catch (error) {
+//     console.error('🔥 Template generation error:', error.message);
+//     throw new Error(error.message || 'Failed to generate template');
+//   }
+// };
+
+export const downloadAttendeeTemplate = async (eventId, brandId) => {
   try {
-    const workbook = new ExcelJS.Workbook(); // ✅ correct
+    console.log('📥 downloadAttendeeTemplate called');
+    console.log('➡ Event ID:', eventId);
+    console.log('➡ Brand ID:', brandId);
+
+    // 1️⃣ Validate
+    if (!eventId) {
+      throw new Error('No event selected.');
+    }
+
+    if (!brandId) {
+      throw new Error('No brand selected.');
+    }
+
+    await connect();
+
+    // 2️⃣ Get Registration with populated brand data
+    const registration = await Registration.findOne({
+      _id: brandId,
+      eventId,
+    }).populate('brandId');
+
+    if (!registration) {
+      throw new Error('Registration not found for this event.');
+    }
+
+    // Capitalize brand name properly
+    const brandName = (registration.brandId?.businessName || 'Unknown Brand')
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+
+    console.log('✅ Registration found for brand:', brandName);
+    console.log('✅ Package:', registration.packageTier);
+    console.log('✅ PAX:', registration.pax);
+
+    const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Attendees');
 
+    // Set column widths
     sheet.columns = [
-      { header: 'brandId', key: 'brandId', width: 30 },
-      { header: 'name', key: 'name', width: 30 },
-      { header: 'email', key: 'email', width: 30 },
-      { header: 'phone', key: 'phone', width: 20 },
-      { header: 'jobTitle', key: 'jobTitle', width: 30 },
+      { header: 'Brand Name', key: 'brandName', width: 35 },
+      { header: 'Name *', key: 'name', width: 30 },
+      { header: 'Email', key: 'email', width: 35 },
+      { header: 'Phone *', key: 'phone', width: 20 },
+      { header: 'Job Title', key: 'jobTitle', width: 30 },
     ];
 
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = {
+      bold: true,
+      size: 12,
+      color: { argb: 'FF333333' },
+    };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4473C5' }, // Nice blue header
+    };
+    headerRow.font = {
+      bold: true,
+      size: 12,
+      color: { argb: 'FFFFFFFF' }, // White text
+    };
+    headerRow.alignment = {
+      vertical: 'middle',
+      horizontal: 'center',
+      wrapText: true,
+    };
+    headerRow.height = 30;
+
+    // Add instruction row with styling
+    sheet.spliceRows(1, 0, []);
+    const instructionRow = sheet.getRow(1);
+    instructionRow.height = 40;
+
+    // Create rich text for instruction
+    const remainingSlots = registration.pax;
+    instructionRow.getCell(1).value = {
+      richText: [
+        {
+          text: '📋 TEMPLATE INSTRUCTIONS',
+          font: { bold: true, size: 11, color: { argb: 'FFFF4444' } },
+        },
+        {
+          text: ` | Brand: ${brandName} | Package: ${registration.packageTier} | Max Attendees: ${registration.pax}`,
+          font: { bold: true, size: 11, color: { argb: 'FF333333' } },
+        },
+        {
+          text: ' | DO NOT change Brand Name column',
+          font: { bold: true, size: 11, color: { argb: 'FFFF4444' } },
+        },
+      ],
+    };
+    sheet.mergeCells(`A1:E1`);
+
+    // Style instruction row background
+    instructionRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFF3CD' }, // Light yellow background
+    };
+    instructionRow.alignment = {
+      vertical: 'middle',
+      horizontal: 'left',
+      indent: 1,
+    };
+
+    // Add column headers with improved styling
+    const columnHeaderRow = sheet.getRow(2);
+    columnHeaderRow.height = 25;
+    columnHeaderRow.font = {
+      bold: true,
+      size: 11,
+      color: { argb: 'FF333333' },
+    };
+    columnHeaderRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE8F0FE' }, // Light blue for headers
+    };
+    columnHeaderRow.alignment = {
+      vertical: 'middle',
+      horizontal: 'center',
+    };
+
+    // Freeze instruction and header rows
+    sheet.views = [{ state: 'frozen', ySplit: 2 }];
+
+    // 3️⃣ Add rows with Brand pre-filled (limit to package PAX)
+    const maxRows = Math.min(registration.pax, 100); // Don't exceed 100 or package limit
+
+    for (let i = 0; i < maxRows; i++) {
+      const row = sheet.addRow({
+        brandName: brandName,
+      });
+
+      // Style the brand name column
+      const brandCell = row.getCell('brandName');
+      brandCell.font = {
+        bold: true,
+        color: { argb: 'FF4473C5' }, // Blue text for brand
+      };
+      brandCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF0F7FF' }, // Very light blue background
+      };
+      brandCell.alignment = {
+        vertical: 'middle',
+        horizontal: 'left',
+        indent: 1,
+      };
+
+      // Add a comment/tooltip
+      brandCell.note = {
+        texts: [
+          {
+            text: 'This brand name is pre-filled for: ',
+            font: { italic: true },
+          },
+          { text: brandName, font: { bold: true } },
+          { text: '\n\nPlease do not change this value.' },
+        ],
+      };
+
+      // Style other cells
+      row.getCell('name').alignment = {
+        vertical: 'middle',
+        horizontal: 'left',
+      };
+      row.getCell('email').alignment = {
+        vertical: 'middle',
+        horizontal: 'left',
+      };
+      row.getCell('phone').alignment = {
+        vertical: 'middle',
+        horizontal: 'left',
+      };
+      row.getCell('jobTitle').alignment = {
+        vertical: 'middle',
+        horizontal: 'left',
+      };
+
+      // Alternate row colors for better readability
+      if (i % 2 === 0) {
+        ['name', 'email', 'phone', 'jobTitle'].forEach((col) => {
+          row.getCell(col).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFAFAFA' }, // Very light gray for alternating rows
+          };
+        });
+      }
+    }
+
+    // Add data validation for required fields
+    for (let rowNum = 3; rowNum < 3 + maxRows; rowNum++) {
+      // Name column (B) - required
+      sheet.getCell(`B${rowNum}`).dataValidation = {
+        type: 'textLength',
+        operator: 'greaterThan',
+        formulas: [0],
+        showErrorMessage: true,
+        errorTitle: 'Required Field',
+        error: 'Name is required for each attendee',
+        prompt: 'Enter attendee full name',
+        promptTitle: 'Name',
+      };
+
+      // Phone column (D) - required
+      sheet.getCell(`D${rowNum}`).dataValidation = {
+        type: 'textLength',
+        operator: 'greaterThan',
+        formulas: [0],
+        showErrorMessage: true,
+        errorTitle: 'Required Field',
+        error: 'Phone number is required for each attendee',
+        prompt: 'Enter phone number with country code',
+        promptTitle: 'Phone',
+      };
+
+      // Email column (C) - optional but format validation
+      sheet.getCell(`C${rowNum}`).dataValidation = {
+        type: 'textLength',
+        operator: 'greaterThan',
+        formulas: [0],
+        allowBlank: true,
+        showErrorMessage: true,
+        errorTitle: 'Invalid Email',
+        error: 'Please enter a valid email address',
+      };
+    }
+
+    // Add a summary row at the bottom
+    const summaryRow = sheet.addRow([]);
+    summaryRow.getCell(1).value =
+      `Total rows: ${maxRows} (based on your package limit)`;
+    summaryRow.font = { italic: true, color: { argb: 'FF666666' } };
+    summaryRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF0F0F0' },
+    };
+    sheet.mergeCells(`A${3 + maxRows}:E${3 + maxRows}`);
+
+    // Add borders to all cells
+    for (let rowNum = 2; rowNum <= 3 + maxRows; rowNum++) {
+      for (let colNum = 1; colNum <= 5; colNum++) {
+        const cell = sheet.getCell(rowNum, colNum);
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+          left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+          bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+          right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        };
+      }
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
+
+    console.log(`✅ Template generated successfully with ${maxRows} rows`);
+    console.log('📊 Package limit applied:', registration.pax);
+
     return buffer;
   } catch (error) {
-    console.error('Error generating template:', error);
-    throw new Error('Failed to generate template');
+    console.error('🔥 Template generation error:', error.message);
+    throw new Error(error.message || 'Failed to generate template');
   }
 };
 
