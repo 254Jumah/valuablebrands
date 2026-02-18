@@ -2,6 +2,7 @@
 
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import ExcelJS from 'exceljs';
 
 import connect from '../utils/db';
 import User from '../models/User';
@@ -20,6 +21,7 @@ import QRCode from 'qrcode';
 
 import 'jspdf-autotable';
 import EventPackage from '../models/EventPackage';
+import Attendee from '../models/Attendee';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.privateemail.com',
@@ -290,6 +292,226 @@ export const getEvent = async (eventId) => {
     return JSON.parse(JSON.stringify(event));
   } catch (error) {
     throw new Error('Failed to fetch event details!');
+  }
+};
+export const getRegistrations = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const registrations = await Registration.find({ eventId })
+      .populate('brandId')
+      .populate('packageId')
+      .populate('eventId')
+      .lean();
+
+    return JSON.parse(JSON.stringify(registrations));
+  } catch (error) {
+    console.error('Error fetching registrations:', error);
+    throw new Error('Failed to fetch registrations!');
+  }
+};
+export const getBrandAttendees = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    // Get all attendees for this event, populated with brand details
+    const attendees = await Attendee.find({ eventId })
+      .populate('brandId')
+      .populate('registrationId')
+      .lean();
+
+    // Group attendees by registration ID
+    const attendeesByBrand = {};
+
+    for (const attendee of attendees) {
+      const regId = attendee.registrationId?._id || attendee.registrationId;
+
+      if (attendee.isWalkIn) {
+        // Handle walk-ins
+        if (!attendeesByBrand['walkins']) {
+          attendeesByBrand['walkins'] = [];
+        }
+        attendeesByBrand['walkins'].push(attendee);
+      } else if (regId) {
+        // Group by registration ID
+        if (!attendeesByBrand[regId]) {
+          attendeesByBrand[regId] = [];
+        }
+        attendeesByBrand[regId].push(attendee);
+      }
+    }
+
+    return JSON.parse(JSON.stringify(attendeesByBrand));
+  } catch (error) {
+    console.error('Error fetching brand attendees:', error);
+    throw new Error('Failed to fetch brand attendees!');
+  }
+};
+export const bulkUploadAttendees = async (eventId, fileBuffer) => {
+  'use server';
+  await connect();
+  try {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    const registrations = rows.map((row) => ({
+      eventId,
+      brandId: row.brandId, // Ensure your Excel has this column
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      jobTitle: row.jobTitle,
+    }));
+    await Registration.insertMany(registrations);
+    return { success: true, message: 'Attendees uploaded successfully' };
+  } catch (error) {
+    console.error('Error uploading attendees:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to upload attendees',
+    };
+  }
+};
+export const createBrand = async (data) => {
+  'use server';
+  await connect();
+  try {
+    const brand = await BrandReg.create({
+      businessName: data.businessName,
+      category: data.category,
+      website: data.website,
+      address: data.address,
+      city: data.city,
+      country: data.country,
+      status: data.status,
+      tags: data.tags,
+      notes: data.notes,
+      primaryContactName: data.primaryContact.name,
+
+      primaryContactTitle: data.primaryContact.title,
+      primaryContactEmail: data.primaryContact.email,
+      primaryContactPhone: data.primaryContact.phone,
+      recordedBy: data.recordedBy || 'system',
+    });
+    return {
+      success: true,
+      message: 'Brand created successfully',
+      data: brand,
+    };
+  } catch (error) {
+    console.error('❌ createBrand error:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to create brand',
+    };
+  }
+};
+
+export const downloadAttendeeTemplate = async (eventId) => {
+  'use server';
+
+  try {
+    const workbook = new ExcelJS.Workbook(); // ✅ correct
+    const sheet = workbook.addWorksheet('Attendees');
+
+    sheet.columns = [
+      { header: 'brandId', key: 'brandId', width: 30 },
+      { header: 'name', key: 'name', width: 30 },
+      { header: 'email', key: 'email', width: 30 },
+      { header: 'phone', key: 'phone', width: 20 },
+      { header: 'jobTitle', key: 'jobTitle', width: 30 },
+    ];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer;
+  } catch (error) {
+    console.error('Error generating template:', error);
+    throw new Error('Failed to generate template');
+  }
+};
+
+export const addAttendeeToRegistration = async (data) => {
+  'use server';
+  await connect();
+  try {
+    const {
+      registrationId,
+      eventId,
+      brandId,
+      name,
+      email,
+      phone,
+      jobTitle,
+      tableNumber,
+      notes,
+    } = data;
+
+    // Find the registration
+    const registration = await Registration.findById(registrationId);
+    if (!registration) {
+      throw new Error('Registration not found');
+    }
+
+    // Check if we haven't exceeded the expected pax
+    const existingAttendeesCount = await Attendee.countDocuments({
+      registrationId: registrationId,
+    });
+
+    if (existingAttendeesCount >= registration.pax) {
+      throw new Error(
+        `Cannot add more than ${registration.pax} attendees for this brand`
+      );
+    }
+
+    // Create new attendee in Attendee collection (not just push to registration)
+    const newAttendee = await Attendee.create({
+      registrationId: registrationId,
+      eventId: eventId,
+      brandId: brandId,
+      name: name,
+      email: email || '',
+      phone: phone,
+      jobTitle: jobTitle || '',
+      tableNumber: tableNumber || '',
+      notes: notes || '',
+      status: 'Checked-In', // Auto check-in when added during event
+      checkedInAt: new Date(),
+      isWalkIn: false, // This is from pre-registered brand
+    });
+
+    return {
+      success: true,
+      attendee: JSON.parse(JSON.stringify(newAttendee)),
+      message: 'Attendee added and checked in successfully',
+    };
+  } catch (error) {
+    console.error('Error adding attendee to registration:', error);
+    return {
+      success: false,
+      message: error.message || 'Failed to add attendee to registration',
+    };
+  }
+};
+
+export const getBrands = async () => {
+  'use server';
+  await connect();
+  try {
+    const brands = await BrandReg.find().sort({ createdAt: -1 }); // newest first
+    return brands;
+  } catch (error) {
+    throw new Error('Failed to fetch brands!');
+  }
+};
+export const getPackages = async () => {
+  'use server';
+  await connect();
+  try {
+    const packages = await EventPackage.find().sort({ createdAt: -1 }); // newest first
+    return packages;
+  } catch (error) {
+    throw new Error('Failed to fetch packages!');
   }
 };
 export const getEventStats = async (eventId) => {
