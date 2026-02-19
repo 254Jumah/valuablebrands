@@ -374,65 +374,151 @@ export const getBrandAttendees = async (eventId) => {
 //   }
 // };
 
-export const bulkUploadAttendees = async (fileBuffer, eventId) => {
+export const bulkUploadAttendees = async ({ fileBase64, eventId }) => {
   try {
+    console.log('📥 bulkUploadAttendees called');
+    console.log('➡ Event ID:', eventId);
+
+    if (!fileBase64) {
+      throw new Error('No file data provided');
+    }
+
+    if (!eventId) {
+      throw new Error('Event ID is required');
+    }
+
     await connect();
 
+    // Convert base64 back to buffer
+    const buffer = Buffer.from(fileBase64, 'base64');
+
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(fileBuffer);
+    await workbook.xlsx.load(buffer);
 
     const sheet = workbook.getWorksheet('Attendees');
+    if (!sheet) {
+      throw new Error('Worksheet "Attendees" not found in the Excel file');
+    }
+
+    console.log(
+      `📊 Processing sheet: ${sheet.name}, Total rows: ${sheet.rowCount}`
+    );
 
     const results = [];
     const errors = [];
+    let processedCount = 0;
+    let skippedCount = 0;
 
-    for (let i = 2; i <= sheet.rowCount; i++) {
+    // Start from row 3 (after instruction row and header)
+    for (let i = 3; i <= sheet.rowCount; i++) {
       const row = sheet.getRow(i);
 
-      const brandName = row.getCell(1).value;
-      const name = row.getCell(2).value;
-      const email = row.getCell(3).value;
-      const phone = row.getCell(4).value;
-      const jobTitle = row.getCell(5).value;
+      // Get values from cells
+      const brandName = row.getCell(1).value?.toString().trim();
+      const name = row.getCell(2).value?.toString().trim();
+      const email = row.getCell(3).value?.toString().trim() || '';
+      const phone = row.getCell(4).value?.toString().trim();
+      const jobTitle = row.getCell(5).value?.toString().trim() || '';
 
-      if (!brandName && !name) continue; // skip empty row
+      // Skip completely empty rows
+      if (!brandName && !name && !phone) {
+        skippedCount++;
+        continue;
+      }
 
-      // Find brand
-      const brand = await Registration.findOne({
+      // Validate required fields
+      if (!name) {
+        errors.push(`Row ${i}: Name is required`);
+        continue;
+      }
+
+      if (!phone) {
+        errors.push(`Row ${i}: Phone number is required`);
+        continue;
+      }
+
+      // Find registration by brand name
+      const registrations = await Registration.find({
         eventId,
-        brandName,
+      }).populate('brandId');
+
+      const matchingRegistration = registrations.find(
+        (reg) =>
+          reg.brandId?.businessName?.toLowerCase().trim() ===
+          brandName?.toLowerCase().trim()
+      );
+
+      if (!matchingRegistration) {
+        errors.push(`Row ${i}: Brand "${brandName}" not found for this event`);
+        continue;
+      }
+
+      // Check if we've exceeded PAX limit
+      const existingAttendees = await Attendee.countDocuments({
+        registrationId: matchingRegistration._id,
+        eventId,
       });
 
-      if (!brand) {
-        errors.push(`Row ${i}: Brand "${brandName}" not found`);
+      if (existingAttendees >= matchingRegistration.pax) {
+        errors.push(
+          `Row ${i}: Cannot add more attendees. Brand "${brandName}" has reached maximum capacity (${matchingRegistration.pax})`
+        );
         continue;
       }
 
       try {
-        await Attendee.create({
-          registrationId: brand._id,
+        // Check if attendee already exists
+        const existingAttendee = await Attendee.findOne({
+          registrationId: matchingRegistration._id,
           eventId,
-          brandId: brand._id,
-          name,
-          email,
-          phone,
-          jobTitle,
+          phone: phone,
         });
 
-        results.push(`Row ${i}: Imported`);
+        if (existingAttendee) {
+          errors.push(
+            `Row ${i}: Attendee with phone ${phone} already exists for this brand`
+          );
+          continue;
+        }
+
+        // Create attendee
+        const attendee = await Attendee.create({
+          registrationId: matchingRegistration._id,
+          eventId: eventId,
+          brandId: matchingRegistration.brandId._id,
+          name: name,
+          email: email,
+          phone: phone,
+          jobTitle: jobTitle,
+          status: 'Registered',
+          isWalkIn: false,
+          createdAt: new Date(),
+        });
+
+        results.push(`Row ${i}: Imported - ${name}`);
+        processedCount++;
+
+        console.log(`✅ Imported: ${name} for ${brandName}`);
       } catch (err) {
-        errors.push(`Row ${i}: Failed to save`);
+        console.error(`Error creating attendee for row ${i}:`, err);
+        errors.push(`Row ${i}: Failed to save - ${err.message}`);
       }
     }
 
+    console.log(
+      `📊 Upload complete: ${processedCount} imported, ${errors.length} errors, ${skippedCount} empty rows skipped`
+    );
+
     return {
       success: true,
-      imported: results.length,
-      errors,
+      imported: processedCount,
+      errors: errors,
+      totalProcessed: processedCount + errors.length,
+      skippedRows: skippedCount,
     };
   } catch (error) {
-    console.error(error);
-    throw new Error('Failed to upload attendees');
+    console.error('🔥 Bulk upload error:', error);
+    throw new Error(error.message || 'Failed to upload attendees');
   }
 };
 
@@ -908,24 +994,173 @@ export const getPackages = async () => {
   }
 };
 export const getEventStats = async (eventId) => {
-  'use server';
-  await connect();
   try {
-    const attendees = await Registration.countDocuments({ eventId });
-    const checkedIn = await Registration.countDocuments({
-      eventId,
-      checkedIn: true,
+    console.log('📊 getEventStats called for event:', eventId);
+
+    if (!eventId) {
+      throw new Error('Event ID is required');
+    }
+
+    await connect();
+
+    // Get event details
+    const event = await Event.findById(eventId);
+    if (!event) {
+      throw new Error('Event not found');
+    }
+    console.log('✅ Event found:', event.title, 'Capacity:', event.capacity);
+
+    // Get all registrations for this event
+    const registrations = await Registration.find({ eventId }).populate(
+      'brandId'
+    );
+    console.log(`✅ Found ${registrations.length} registrations`);
+
+    // Calculate total brands
+    const totalBrands = registrations.length;
+
+    // Calculate total expected (sum of all pax)
+    const totalExpected = registrations.reduce((sum, reg) => {
+      return sum + (reg.pax || 0);
+    }, 0);
+
+    // Get all attendees for this event
+    const attendees = await Attendee.find({ eventId });
+    console.log(`✅ Found ${attendees.length} total attendees`);
+
+    // Calculate checked in count (status 'Checked-In')
+    const totalCheckedIn = attendees.filter(
+      (a) => a.status === 'Checked-In'
+    ).length;
+    console.log(`✅ Checked in: ${totalCheckedIn}`);
+
+    // Calculate walk-ins (isWalkIn flag)
+    const walkIns = attendees.filter((a) => a.isWalkIn === true).length;
+    console.log(`✅ Walk-ins: ${walkIns}`);
+
+    // Calculate pending (Registered status)
+    const pending = attendees.filter((a) => a.status === 'Registered').length;
+
+    // Calculate no-shows
+    const noShows = attendees.filter((a) => a.status === 'No-Show').length;
+
+    // Calculate check-in rate (based on total expected, not attendees)
+    const checkinRate =
+      totalExpected > 0
+        ? Math.round((totalCheckedIn / totalExpected) * 100)
+        : 0;
+
+    // Calculate remaining slots using event capacity
+    // Slots Left = Event Capacity - Total Checked In
+    const remainingCapacity = event?.capacity
+      ? Math.max(0, event.capacity - totalCheckedIn)
+      : 0;
+
+    // Calculate by brand for debugging
+    const brandStats = {};
+    registrations.forEach((reg) => {
+      const regAttendees = attendees.filter(
+        (a) => a.registrationId?.toString() === reg._id.toString()
+      );
+      brandStats[reg.brandId?.businessName || 'Unknown'] = {
+        expected: reg.pax,
+        checkedIn: regAttendees.filter((a) => a.status === 'Checked-In').length,
+        pending: regAttendees.filter((a) => a.status === 'Registered').length,
+        noShow: regAttendees.filter((a) => a.status === 'No-Show').length,
+      };
     });
-    return { attendees, checkedIn };
+
+    const stats = {
+      totalBrands,
+      totalExpected,
+      totalCheckedIn,
+      walkIns,
+      pending,
+      noShows,
+      checkinRate,
+      remainingCapacity,
+      brandStats, // Include for debugging
+    };
+
+    console.log('✅ Final stats calculated:', {
+      totalBrands,
+      totalExpected,
+      totalCheckedIn,
+      walkIns,
+      pending,
+      noShows,
+      checkinRate: checkinRate + '%',
+      remainingCapacity,
+      brandStats,
+    });
+
+    return stats;
   } catch (error) {
-    throw new Error('Failed to fetch event stats!');
+    console.error('🔥 Error getting event stats:', error);
+    throw new Error(error.message || 'Failed to get event stats');
+  }
+};
+export const getEventStatssss = async (eventId) => {
+  try {
+    console.log('📊 getEventStats called for event:', eventId);
+
+    await connect();
+
+    // Get all registrations for this event
+    const registrations = await Registration.find({ eventId });
+    const totalBrands = registrations.length;
+
+    // Calculate total expected (sum of all pax)
+    const totalExpected = registrations.reduce(
+      (sum, reg) => sum + (reg.pax || 0),
+      0
+    );
+
+    // Get all attendees for this event
+    const attendees = await Attendee.find({ eventId });
+
+    // Calculate checked in count
+    const totalCheckedIn = attendees.filter(
+      (a) => a.status === 'Checked-In'
+    ).length;
+
+    // Calculate walk-ins
+    const walkIns = attendees.filter((a) => a.isWalkIn === true).length;
+
+    // Calculate check-in rate
+    const checkinRate =
+      totalExpected > 0
+        ? Math.round((totalCheckedIn / totalExpected) * 100)
+        : 0;
+
+    // Get event capacity (if you have it)
+    const event = await Event.findById(eventId);
+    const remainingCapacity = event?.capacity
+      ? event.capacity - totalCheckedIn
+      : 0;
+
+    const stats = {
+      totalBrands,
+      totalExpected,
+      totalCheckedIn,
+      walkIns,
+      checkinRate,
+      remainingCapacity,
+    };
+
+    console.log('✅ Calculated stats:', stats);
+
+    return stats;
+  } catch (error) {
+    console.error('🔥 Error getting event stats:', error);
+    throw new Error('Failed to get event stats');
   }
 };
 export const markNoShow = async (registrationId) => {
   'use server';
   await connect();
   try {
-    const registration = await Registration.findById(registrationId);
+    const registration = await Attendee.findById(registrationId);
     if (!registration) {
       throw new Error('Registration not found');
     }
@@ -968,13 +1203,50 @@ export const registerWalkIn = async (data) => {
     };
   }
 };
+export const downloadEventAttendees = async (eventId) => {
+  'use server';
+  await connect();
+  try {
+    const attendees = await Attendee.find({ eventId })
+      .populate('brandId')
+      .populate('registrationId')
+      .lean();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Event Attendees');
+    sheet.columns = [
+      { header: 'Brand Name', key: 'brandName', width: 30 },
+      { header: 'Attendee Name', key: 'attendeeName', width: 30 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Phone', key: 'phone', width: 20 },
+      { header: 'Job Title', key: 'jobTitle', width: 30 },
+      { header: 'Checked In', key: 'checkedIn', width: 15 },
+      { header: 'No Show', key: 'noShow', width: 15 },
+    ];
+    attendees.forEach((attendee) => {
+      sheet.addRow({
+        brandName: attendee.brandId?.businessName || 'N/A',
+        attendeeName: attendee.name,
+        email: attendee.email,
+        phone: attendee.phone,
+        jobTitle: attendee.jobTitle,
+        checkedIn: attendee.checkedIn ? 'Yes' : 'No',
+        noShow: attendee.noShow ? 'Yes' : 'No',
+      });
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer;
+  } catch (error) {
+    console.error('Error downloading event attendees:', error);
+    throw new Error('Failed to download event attendees');
+  }
+};
 export const undoCheckIn = async (registrationId) => {
   'use server';
   await connect();
   try {
-    const registration = await Registration.findById(registrationId);
+    const registration = await Attendee.findById(registrationId);
     if (!registration) {
-      throw new Error('Registration not found');
+      throw new Error('Attendee not found');
     }
     registration.checkedIn = false;
     await registration.save();

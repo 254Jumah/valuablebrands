@@ -10,7 +10,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -38,7 +37,6 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
-import * as XLSX from 'xlsx';
 
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -72,8 +70,9 @@ import {
   FileSpreadsheet,
   PlusCircle,
   UserPlus2,
+  FileDown,
 } from 'lucide-react';
-import { format, isToday, isFuture, isPast, parseISO } from 'date-fns';
+import { format, isToday, isFuture, isPast } from 'date-fns';
 
 // Import actions
 import {
@@ -92,6 +91,7 @@ import {
   getPackages,
   bulkUploadAttendees,
   downloadAttendeeTemplate,
+  downloadEventAttendees,
 } from '@/app/lib/action';
 
 export default function EventCheckin() {
@@ -118,9 +118,8 @@ export default function EventCheckin() {
 
   // UI states
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
   const [packageFilter, setPackageFilter] = useState('All');
-  const [selectedBrand, setSelectedBrand] = useState(null);
+  const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [checkInSheetOpen, setCheckInSheetOpen] = useState(false);
   const [addAttendeeOpen, setAddAttendeeOpen] = useState(false);
@@ -128,7 +127,7 @@ export default function EventCheckin() {
   const [actionLoading, setActionLoading] = useState(false);
   const [selectedAttendees, setSelectedAttendees] = useState({});
 
-  // Walk-in form state (for true walk-ins)
+  // Walk-in form state
   const [walkInForm, setWalkInForm] = useState({
     name: '',
     email: '',
@@ -138,7 +137,7 @@ export default function EventCheckin() {
     notes: '',
   });
 
-  // Add attendee to existing registration form
+  // Add attendee form
   const [addAttendeeForm, setAddAttendeeForm] = useState({
     name: '',
     email: '',
@@ -273,8 +272,47 @@ export default function EventCheckin() {
       const attendeesData = await getBrandAttendees(eventId);
       setBrandAttendees(attendeesData);
 
-      const statsData = await getEventStats(eventId);
-      setStats(statsData);
+      // Calculate stats manually
+      const totalBrands = registrationsData.length;
+      const totalExpected = registrationsData.reduce(
+        (sum, reg) => sum + (reg.pax || 0),
+        0
+      );
+
+      // Flatten all attendees
+      const allAttendees = Object.values(attendeesData).flat();
+      const totalCheckedIn = allAttendees.filter(
+        (a) => a.status === 'Checked-In'
+      ).length;
+      const walkIns = allAttendees.filter((a) => a.isWalkIn).length;
+      const checkinRate =
+        totalExpected > 0
+          ? Math.round((totalCheckedIn / totalExpected) * 100)
+          : 0;
+
+      // Calculate remaining slots correctly using event capacity
+      const remainingCapacity = eventData?.capacity
+        ? Math.max(0, eventData.capacity - totalCheckedIn)
+        : 0;
+
+      setStats({
+        totalBrands,
+        totalExpected,
+        totalCheckedIn,
+        walkIns,
+        checkinRate,
+        remainingCapacity, // This is now a number, not a percentage
+      });
+
+      console.log('📊 Stats calculated:', {
+        totalBrands,
+        totalExpected,
+        totalCheckedIn,
+        walkIns,
+        checkinRate,
+        remainingCapacity,
+        eventCapacity: eventData?.capacity,
+      });
     } catch (error) {
       toast.error(error.message || 'Failed to load event data');
     } finally {
@@ -283,7 +321,7 @@ export default function EventCheckin() {
   };
 
   const handleBrandSelect = (registration) => {
-    setSelectedBrand(registration);
+    setSelectedRegistration(registration);
     setSelectedAttendees({});
     setCheckInSheetOpen(true);
   };
@@ -298,13 +336,12 @@ export default function EventCheckin() {
       setActionLoading(true);
 
       const response = await addAttendeeToRegistration({
-        registrationId: selectedBrand._id,
+        registrationId: selectedRegistration._id,
         eventId: selectedEventId,
-        brandId: selectedBrand.brandId._id,
+        brandId: selectedRegistration.brandId._id,
         ...addAttendeeForm,
       });
 
-      // 🔥 IMPORTANT: Check success from backend
       if (!response.success) {
         toast.error(response.message);
         return;
@@ -317,7 +354,6 @@ export default function EventCheckin() {
       const updatedStats = await getEventStats(selectedEventId);
       setStats(updatedStats);
 
-      // ✅ Use backend message instead of hardcoded one
       toast.success(response.message);
 
       // Reset form
@@ -446,7 +482,6 @@ export default function EventCheckin() {
     }
   };
 
-  // SIMPLIFIED Walk-in Registration (for true walk-ins)
   const handleWalkInSubmit = async () => {
     if (!walkInForm.name || !walkInForm.phone) {
       toast.error('Name and phone are required.');
@@ -458,7 +493,6 @@ export default function EventCheckin() {
 
       let brandId = selectedBrandForWalkin;
 
-      // Create new brand if needed
       if (isNewBrand) {
         if (
           !newBrandForm.businessName ||
@@ -482,19 +516,15 @@ export default function EventCheckin() {
         setBrands((prev) => [newBrand, ...prev]);
       }
 
-      // Simple walk-in data - one person at a time
       const walkInData = {
         ...walkInForm,
         brandId: brandId,
         eventId: selectedEventId,
         isWalkIn: true,
-        // Auto-set package as Walk-In (you can set a default walk-in package ID)
-        packageId: 'walkin-package-id', // You'll need to set this
       };
 
       await registerWalkIn(walkInData);
 
-      // Refresh data
       const attendeesData = await getBrandAttendees(selectedEventId);
       setBrandAttendees(attendeesData);
 
@@ -535,7 +565,6 @@ export default function EventCheckin() {
     }
   };
 
-  // In your frontend handleDownloadTemplate:
   const handleDownloadTemplate = async () => {
     try {
       if (!selectedEventId) {
@@ -543,8 +572,8 @@ export default function EventCheckin() {
         return;
       }
 
-      if (!selectedBrand) {
-        toast.error('Please select a registration/brand first');
+      if (!selectedRegistration) {
+        toast.error('Please select a brand first');
         return;
       }
 
@@ -552,7 +581,7 @@ export default function EventCheckin() {
 
       const buffer = await downloadAttendeeTemplate(
         selectedEventId,
-        selectedBrand._id
+        selectedRegistration._id
       );
 
       const blob = new Blob([buffer], {
@@ -562,10 +591,10 @@ export default function EventCheckin() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
 
-      // Create filename with brand name, package, and date
       const brandName =
-        selectedBrand.brandId?.businessName?.replace(/\s+/g, '_') || 'brand';
-      const packageTier = selectedBrand.packageTier || 'package';
+        selectedRegistration.brandId?.businessName?.replace(/\s+/g, '_') ||
+        'brand';
+      const packageTier = selectedRegistration.packageTier || 'package';
       const date = new Date().toISOString().split('T')[0];
 
       link.href = url;
@@ -575,7 +604,7 @@ export default function EventCheckin() {
       window.URL.revokeObjectURL(url);
 
       toast.success(
-        `Template downloaded for ${selectedBrand.brandId?.businessName}`
+        `Template downloaded for ${selectedRegistration.brandId?.businessName}`
       );
     } catch (error) {
       console.log('Frontend caught error:', error);
@@ -584,52 +613,119 @@ export default function EventCheckin() {
       setActionLoading(false);
     }
   };
+
+  const handleDownloadEventAttendees = async () => {
+    try {
+      if (!selectedEventId) {
+        toast.error('Please select an event first');
+        return;
+      }
+
+      setActionLoading(true);
+
+      const buffer = await downloadEventAttendees(selectedEventId);
+
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      const eventName = event?.title?.replace(/\s+/g, '_') || 'event';
+      const date = new Date().toISOString().split('T')[0];
+
+      link.href = url;
+      link.download = `${eventName}_all_attendees_${date}.xlsx`;
+      link.click();
+
+      window.URL.revokeObjectURL(url);
+
+      toast.success('All attendees downloaded successfully');
+    } catch (error) {
+      console.log('Frontend caught error:', error);
+      toast.error(error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (!file.name.match(/\.(xlsx|xls)$/)) {
+      toast.error('Please upload an Excel file (.xlsx or .xls)');
+      e.target.value = null;
+      return;
+    }
+
+    if (!selectedRegistration) {
+      toast.error('Please select a brand first');
+      e.target.value = null;
+      return;
+    }
+
     try {
       setActionLoading(true);
+      setUploadFile(file);
       setUploadProgress('Reading file...');
 
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
-          const data = new Uint8Array(event.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          const arrayBuffer = event.target.result;
+          const base64 = btoa(
+            new Uint8Array(arrayBuffer).reduce(
+              (data, byte) => data + String.fromCharCode(byte),
+              ''
+            )
+          );
 
-          setUploadProgress(`Uploading ${jsonData.length} attendees...`);
+          setUploadProgress(`Uploading file: ${file.name}...`);
 
           const result = await bulkUploadAttendees({
+            fileBase64: base64,
             eventId: selectedEventId,
-            attendees: jsonData,
           });
 
-          // Refresh data
+          if (result.errors && result.errors.length > 0) {
+            toast.warning(
+              `Uploaded ${result.imported} attendees. ${result.errors.length} errors.`
+            );
+            console.error('Upload errors:', result.errors);
+          } else {
+            toast.success(`${result.imported} attendees uploaded successfully`);
+          }
+
           const attendeesData = await getBrandAttendees(selectedEventId);
           setBrandAttendees(attendeesData);
 
           const updatedStats = await getEventStats(selectedEventId);
           setStats(updatedStats);
 
-          toast.success(`${result.count} attendees uploaded successfully`);
           setBulkUploadOpen(false);
+          setUploadFile(null);
           setUploadProgress(null);
+          setSelectedRegistration(null);
+          e.target.value = null;
         } catch (error) {
+          console.error('Upload error:', error);
           toast.error(error.message || 'Failed to process file');
           setUploadProgress(null);
+          e.target.value = null;
+        } finally {
+          setActionLoading(false);
         }
       };
 
       reader.readAsArrayBuffer(file);
     } catch (error) {
-      toast.error('Failed to upload file');
+      console.error('File read error:', error);
+      toast.error('Failed to read file');
       setUploadProgress(null);
-    } finally {
       setActionLoading(false);
+      e.target.value = null;
     }
   };
 
@@ -957,466 +1053,54 @@ export default function EventCheckin() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Sheet open={bulkUploadOpen} onOpenChange={setBulkUploadOpen}>
-                    <SheetContent className="overflow-y-auto sm:max-w-xl">
-                      <SheetHeader>
-                        <SheetTitle>Bulk Upload Attendees</SheetTitle>
-                        <SheetDescription>
-                          Upload multiple attendees using Excel file. Download
-                          template first, fill it with attendee data, then
-                          upload.
-                        </SheetDescription>
-                      </SheetHeader>
+                  {/* Download All Attendees Button */}
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleDownloadEventAttendees}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <FileDown className="h-5 w-5" />
+                    )}
+                    Download All Attendees
+                  </Button>
 
-                      <div className="space-y-6 mt-6">
-                        {/* Brand Selection Card */}
-                        <Card>
-                          <CardHeader className="pb-3">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <Building2 className="h-4 w-4" />
-                              Select Brand
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <Select
-                              value={selectedBrand?._id}
-                              onValueChange={(value) => {
-                                const brand = registrations.find(
-                                  (r) => r._id === value
-                                );
-                                setSelectedBrand(brand);
-                                // Reset file upload when brand changes
-                                setUploadFile(null);
-                                setUploadProgress(null);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Choose a brand for template" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {registrations.length === 0 ? (
-                                  <div className="p-2 text-sm text-muted-foreground text-center">
-                                    No brands available
-                                  </div>
-                                ) : (
-                                  registrations.map((reg) => (
-                                    <SelectItem key={reg._id} value={reg._id}>
-                                      <div className="flex items-center justify-between w-full">
-                                        <span>
-                                          {reg.brandId?.businessName ||
-                                            'Unknown Brand'}
-                                        </span>
-                                        <Badge
-                                          variant="outline"
-                                          className="ml-2"
-                                        >
-                                          {reg.packageTier}
-                                        </Badge>
-                                      </div>
-                                    </SelectItem>
-                                  ))
-                                )}
-                              </SelectContent>
-                            </Select>
+                  {/* Bulk Upload Button */}
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      setSelectedRegistration(null);
+                      setBulkUploadOpen(true);
+                    }}
+                    disabled={actionLoading}
+                  >
+                    <Upload className="h-5 w-5" />
+                    Bulk Upload
+                  </Button>
 
-                            {selectedBrand && (
-                              <div className="mt-3 text-sm text-muted-foreground">
-                                <p>Package: {selectedBrand.packageTier}</p>
-                                <p>Expected PAX: {selectedBrand.pax}</p>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-
-                        {/* Template Download Card */}
-                        <Card>
-                          <CardHeader className="pb-3">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <FileSpreadsheet className="h-4 w-4" />
-                              Step 1: Download Template
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <Button
-                              onClick={handleDownloadTemplate}
-                              variant="outline"
-                              className="w-full gap-2"
-                              disabled={!selectedBrand || actionLoading}
-                            >
-                              {actionLoading ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Download className="h-4 w-4" />
-                              )}
-                              Download Excel Template
-                              {selectedBrand?.brandId?.businessName &&
-                                ` for ${selectedBrand.brandId.businessName}`}
-                            </Button>
-
-                            <div className="mt-3 space-y-2">
-                              <p className="text-xs text-muted-foreground">
-                                Template includes:
-                              </p>
-                              <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
-                                <li>Brand name pre-filled (locked column)</li>
-                                <li>Required columns: Name *, Phone *</li>
-                                <li>Optional: Email, Job Title</li>
-                                <li>100 blank rows for attendees</li>
-                              </ul>
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        {/* File Upload Card */}
-                        <Card>
-                          <CardHeader className="pb-3">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <Upload className="h-4 w-4" />
-                              Step 2: Upload Filled Template
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-4">
-                              <Input
-                                type="file"
-                                accept=".xlsx,.xls,.csv"
-                                onChange={handleFileUpload}
-                                disabled={actionLoading || !selectedBrand}
-                                className="cursor-pointer"
-                              />
-
-                              {/* File info */}
-                              {uploadFile && (
-                                <div className="flex items-center justify-between text-sm p-2 bg-muted rounded-md">
-                                  <span className="truncate max-w-[200px]">
-                                    {uploadFile.name}
-                                  </span>
-                                  <Badge variant="outline">
-                                    {(uploadFile.size / 1024).toFixed(1)} KB
-                                  </Badge>
-                                </div>
-                              )}
-
-                              {/* Progress indicator */}
-                              {uploadProgress && (
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    <span>{uploadProgress}</span>
-                                  </div>
-                                  <Progress
-                                    value={uploadProgress.progress}
-                                    className="h-2"
-                                  />
-                                </div>
-                              )}
-
-                              {/* Instructions */}
-                              <div className="border-t pt-3">
-                                <p className="text-xs font-medium mb-2">
-                                  Instructions:
-                                </p>
-                                <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
-                                  <li>
-                                    Fill only the unlocked columns (Name, Email,
-                                    Phone, Job Title)
-                                  </li>
-                                  <li>
-                                    Brand Name column is locked and pre-filled
-                                  </li>
-                                  <li>
-                                    Phone number is required for each attendee
-                                  </li>
-                                  <li>Maximum 100 attendees per upload</li>
-                                  <li>Save file as .xlsx format</li>
-                                </ul>
-                              </div>
-
-                              {/* Sample format */}
-                              <div className="bg-muted/50 rounded-md p-3">
-                                <p className="text-xs font-medium mb-2">
-                                  Sample format:
-                                </p>
-                                <table className="text-xs w-full">
-                                  <thead>
-                                    <tr className="border-b">
-                                      <th className="text-left py-1">Name *</th>
-                                      <th className="text-left py-1">Email</th>
-                                      <th className="text-left py-1">
-                                        Phone *
-                                      </th>
-                                      <th className="text-left py-1">
-                                        Job Title
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td className="py-1">John Doe</td>
-                                      <td className="py-1">john@email.com</td>
-                                      <td className="py-1">0712345678</td>
-                                      <td className="py-1">Manager</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-
-                        {/* Action Buttons */}
-                        <div className="flex gap-2 pt-4 border-t">
-                          <Button
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => {
-                              setBulkUploadOpen(false);
-                              setUploadFile(null);
-                              setUploadProgress(null);
-                              setSelectedBrand(null);
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            className="flex-1 gap-2"
-                            onClick={handleFileUpload}
-                            disabled={
-                              !uploadFile || actionLoading || !selectedBrand
-                            }
-                          >
-                            {actionLoading ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Upload className="h-4 w-4" />
-                            )}
-                            Upload & Process
-                          </Button>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
-
-                  <Sheet open={walkInOpen} onOpenChange={setWalkInOpen}>
-                    <SheetTrigger asChild>
-                      <Button
-                        size="lg"
-                        className="gap-2"
-                        disabled={actionLoading || !canCheckIn}
-                      >
-                        <UserPlus className="h-5 w-5" />
-                        Walk-in Registration
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent className="overflow-y-auto sm:max-w-xl">
-                      <SheetHeader>
-                        <SheetTitle>Walk-in Registration</SheetTitle>
-                        <SheetDescription>
-                          Register a brand that did not pre-register
-                        </SheetDescription>
-                      </SheetHeader>
-
-                      <div className="space-y-4 mt-6">
-                        {/* Brand Selection */}
-                        <div className="space-y-2">
-                          <Label>Select Brand/Company</Label>
-                          <div className="flex gap-2">
-                            <Select
-                              value={selectedBrandForWalkin}
-                              onValueChange={(value) => {
-                                if (value === 'new') {
-                                  setIsNewBrand(true);
-                                  setSelectedBrandForWalkin(null);
-                                } else {
-                                  setSelectedBrandForWalkin(value);
-                                  setIsNewBrand(false);
-                                  const brand = brands.find(
-                                    (b) => b._id === value
-                                  );
-                                  setWalkInForm((prev) => ({
-                                    ...prev,
-                                    company: brand?.businessName || '',
-                                  }));
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="flex-1">
-                                <SelectValue placeholder="Select existing brand" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="new">
-                                  <div className="flex items-center gap-2">
-                                    <PlusCircle className="h-4 w-4" />
-                                    Register New Brand
-                                  </div>
-                                </SelectItem>
-                                {brands.map((brand) => (
-                                  <SelectItem key={brand._id} value={brand._id}>
-                                    {brand.businessName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        {/* New Brand Form - Only show when creating new brand */}
-                        {isNewBrand && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-sm">
-                                New Brand Details
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                              <Input
-                                placeholder="Business Name *"
-                                value={newBrandForm.businessName}
-                                onChange={(e) =>
-                                  setNewBrandForm({
-                                    ...newBrandForm,
-                                    businessName: e.target.value,
-                                  })
-                                }
-                              />
-                              <Input
-                                placeholder="Category"
-                                value={newBrandForm.category}
-                                onChange={(e) =>
-                                  setNewBrandForm({
-                                    ...newBrandForm,
-                                    category: e.target.value,
-                                  })
-                                }
-                              />
-                              <div className="border-t pt-3">
-                                <p className="text-sm font-medium mb-2">
-                                  Primary Contact
-                                </p>
-                                <Input
-                                  placeholder="Contact Name *"
-                                  value={newBrandForm.primaryContactName}
-                                  onChange={(e) =>
-                                    setNewBrandForm({
-                                      ...newBrandForm,
-                                      primaryContactName: e.target.value,
-                                    })
-                                  }
-                                  className="mb-2"
-                                />
-                                <Input
-                                  placeholder="Contact Email"
-                                  type="email"
-                                  value={newBrandForm.primaryContactEmail}
-                                  onChange={(e) =>
-                                    setNewBrandForm({
-                                      ...newBrandForm,
-                                      primaryContactEmail: e.target.value,
-                                    })
-                                  }
-                                  className="mb-2"
-                                />
-                                <Input
-                                  placeholder="Contact Phone *"
-                                  value={newBrandForm.primaryContactPhone}
-                                  onChange={(e) =>
-                                    setNewBrandForm({
-                                      ...newBrandForm,
-                                      primaryContactPhone: e.target.value,
-                                    })
-                                  }
-                                />
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-
-                        {/* Attendee Details - Simple form for one person */}
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-sm">
-                              Attendee Details
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <Input
-                              placeholder="Full Name *"
-                              value={walkInForm.name}
-                              onChange={(e) =>
-                                setWalkInForm({
-                                  ...walkInForm,
-                                  name: e.target.value,
-                                })
-                              }
-                            />
-                            <Input
-                              placeholder="Email"
-                              type="email"
-                              value={walkInForm.email}
-                              onChange={(e) =>
-                                setWalkInForm({
-                                  ...walkInForm,
-                                  email: e.target.value,
-                                })
-                              }
-                            />
-                            <Input
-                              placeholder="Phone Number *"
-                              value={walkInForm.phone}
-                              onChange={(e) =>
-                                setWalkInForm({
-                                  ...walkInForm,
-                                  phone: e.target.value,
-                                })
-                              }
-                            />
-                            <Input
-                              placeholder="Table/Seat Assignment (Optional)"
-                              value={walkInForm.tableNumber}
-                              onChange={(e) =>
-                                setWalkInForm({
-                                  ...walkInForm,
-                                  tableNumber: e.target.value,
-                                })
-                              }
-                            />
-                            <Textarea
-                              placeholder="Notes (Optional)"
-                              value={walkInForm.notes}
-                              onChange={(e) =>
-                                setWalkInForm({
-                                  ...walkInForm,
-                                  notes: e.target.value,
-                                })
-                              }
-                            />
-                          </CardContent>
-                        </Card>
-
-                        <div className="pt-4 border-t">
-                          <Button
-                            onClick={handleWalkInSubmit}
-                            className="w-full gap-2"
-                            disabled={actionLoading}
-                          >
-                            {actionLoading ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-4 w-4" />
-                            )}
-                            Register Walk-in & Check In
-                          </Button>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
+                  {/* Walk-in Button */}
+                  <Button
+                    size="lg"
+                    className="gap-2"
+                    onClick={() => setWalkInOpen(true)}
+                    disabled={actionLoading || !canCheckIn}
+                  >
+                    <UserPlus className="h-5 w-5" />
+                    Walk-in Registration
+                  </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
@@ -1424,7 +1108,9 @@ export default function EventCheckin() {
                     <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.totalBrands}</p>
+                    <p className="text-2xl font-bold">
+                      {stats.totalBrands || 0}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Brands Registered
                     </p>
@@ -1439,7 +1125,9 @@ export default function EventCheckin() {
                     <Users2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.totalExpected}</p>
+                    <p className="text-2xl font-bold">
+                      {stats.totalExpected || 0}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Total Expected
                     </p>
@@ -1454,7 +1142,9 @@ export default function EventCheckin() {
                     <UserCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.totalCheckedIn}</p>
+                    <p className="text-2xl font-bold">
+                      {stats.totalCheckedIn || 0}
+                    </p>
                     <p className="text-xs text-muted-foreground">Checked In</p>
                   </div>
                 </div>
@@ -1467,7 +1157,7 @@ export default function EventCheckin() {
                     <UserPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.walkIns}</p>
+                    <p className="text-2xl font-bold">{stats.walkIns || 0}</p>
                     <p className="text-xs text-muted-foreground">Walk-ins</p>
                   </div>
                 </div>
@@ -1480,25 +1170,12 @@ export default function EventCheckin() {
                     <TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.checkinRate}%</p>
+                    <p className="text-2xl font-bold">
+                      {stats.checkinRate || 0}%
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       Check-in Rate
                     </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800">
-                    <Ticket className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {stats.remainingCapacity}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Slots Left</p>
                   </div>
                 </div>
               </CardContent>
@@ -1768,19 +1445,459 @@ export default function EventCheckin() {
         </>
       )}
 
+      {/* Bulk Upload Sheet */}
+      <Sheet open={bulkUploadOpen} onOpenChange={setBulkUploadOpen}>
+        <SheetContent className="overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>Bulk Upload Attendees</SheetTitle>
+            <SheetDescription>
+              Upload multiple attendees using Excel file. Download template
+              first, fill it with attendee data, then upload.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-6 mt-6">
+            {/* Brand Selection Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Select Brand
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Select
+                  value={selectedRegistration?._id}
+                  onValueChange={(value) => {
+                    const registration = registrations.find(
+                      (r) => r._id === value
+                    );
+                    setSelectedRegistration(registration);
+                    setUploadFile(null);
+                    setUploadProgress(null);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a brand for template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {registrations.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No brands available
+                      </div>
+                    ) : (
+                      registrations.map((reg) => {
+                        const currentCount =
+                          brandAttendees[reg._id]?.length || 0;
+                        const remainingSlots = reg.pax - currentCount;
+
+                        return (
+                          <SelectItem key={reg._id} value={reg._id}>
+                            <div className="flex items-center justify-between w-full">
+                              <span>
+                                {reg.brandId?.businessName || 'Unknown Brand'}
+                              </span>
+                              <div className="flex items-center gap-2 ml-2">
+                                <Badge variant="outline">
+                                  {reg.packageTier}
+                                </Badge>
+                                <Badge
+                                  variant={
+                                    remainingSlots > 0
+                                      ? 'default'
+                                      : 'destructive'
+                                  }
+                                >
+                                  {remainingSlots} slots
+                                </Badge>
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })
+                    )}
+                  </SelectContent>
+                </Select>
+
+                {selectedRegistration && (
+                  <div className="mt-3 space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Package:</span>
+                      <span className="font-medium">
+                        {selectedRegistration.packageTier}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total PAX:</span>
+                      <span className="font-medium">
+                        {selectedRegistration.pax}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Current attendees:
+                      </span>
+                      <span className="font-medium">
+                        {brandAttendees[selectedRegistration._id]?.length || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t mt-1">
+                      <span className="text-muted-foreground">
+                        Available slots:
+                      </span>
+                      <span className="font-bold text-green-600">
+                        {selectedRegistration.pax -
+                          (brandAttendees[selectedRegistration._id]?.length ||
+                            0)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Template Download Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Step 1: Download Template
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={handleDownloadTemplate}
+                  variant="outline"
+                  className="w-full gap-2"
+                  disabled={!selectedRegistration || actionLoading}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Download Excel Template
+                  {selectedRegistration?.brandId?.businessName &&
+                    ` for ${selectedRegistration.brandId.businessName}`}
+                </Button>
+
+                <div className="mt-3 bg-blue-50 dark:bg-blue-950/50 p-3 rounded-md">
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+                    Template features:
+                  </p>
+                  <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-1 list-disc pl-4">
+                    <li>Brand name pre-filled and locked</li>
+                    <li>Required columns: Name *, Phone *</li>
+                    <li>Optional: Email, Job Title</li>
+                    <li>
+                      Rows match your package limit (
+                      {selectedRegistration?.pax || 100})
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* File Upload Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Step 2: Upload Filled Template
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileUpload}
+                    disabled={actionLoading || !selectedRegistration}
+                    className="cursor-pointer"
+                    key={uploadFile ? 'file-selected' : 'no-file'}
+                  />
+
+                  {uploadFile && (
+                    <div className="flex items-center justify-between text-sm p-2 bg-muted rounded-md">
+                      <span className="truncate max-w-[200px]">
+                        {uploadFile.name}
+                      </span>
+                      <Badge variant="outline">
+                        {(uploadFile.size / 1024).toFixed(1)} KB
+                      </Badge>
+                    </div>
+                  )}
+
+                  {uploadProgress && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{uploadProgress}</span>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-3">
+                    <p className="text-xs font-medium mb-2">Instructions:</p>
+                    <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
+                      <li>Fill only Name, Email, Phone, Job Title columns</li>
+                      <li>Brand Name is pre-filled - do not change it</li>
+                      <li>Phone number is required for each attendee</li>
+                      <li>
+                        Dont exceed available slots (
+                        {selectedRegistration
+                          ? selectedRegistration.pax -
+                            (brandAttendees[selectedRegistration._id]?.length ||
+                              0)
+                          : 0}
+                        )
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setBulkUploadOpen(false);
+                  setUploadFile(null);
+                  setUploadProgress(null);
+                  setSelectedRegistration(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                onClick={handleFileUpload}
+                disabled={!uploadFile || actionLoading || !selectedRegistration}
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                Upload & Process
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Walk-in Registration Sheet */}
+      <Sheet open={walkInOpen} onOpenChange={setWalkInOpen}>
+        <SheetContent className="overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>Walk-in Registration</SheetTitle>
+            <SheetDescription>
+              Register a brand that did not pre-register
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-4 mt-6">
+            {/* Brand Selection */}
+            <div className="space-y-2">
+              <Label>Select Brand/Company</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={selectedBrandForWalkin}
+                  onValueChange={(value) => {
+                    if (value === 'new') {
+                      setIsNewBrand(true);
+                      setSelectedBrandForWalkin(null);
+                    } else {
+                      setSelectedBrandForWalkin(value);
+                      setIsNewBrand(false);
+                      const brand = brands.find((b) => b._id === value);
+                      setWalkInForm((prev) => ({
+                        ...prev,
+                        company: brand?.businessName || '',
+                      }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select existing brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">
+                      <div className="flex items-center gap-2">
+                        <PlusCircle className="h-4 w-4" />
+                        Register New Brand
+                      </div>
+                    </SelectItem>
+                    {brands.map((brand) => (
+                      <SelectItem key={brand._id} value={brand._id}>
+                        {brand.businessName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* New Brand Form */}
+            {isNewBrand && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">New Brand Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    placeholder="Business Name *"
+                    value={newBrandForm.businessName}
+                    onChange={(e) =>
+                      setNewBrandForm({
+                        ...newBrandForm,
+                        businessName: e.target.value,
+                      })
+                    }
+                  />
+                  <Input
+                    placeholder="Category"
+                    value={newBrandForm.category}
+                    onChange={(e) =>
+                      setNewBrandForm({
+                        ...newBrandForm,
+                        category: e.target.value,
+                      })
+                    }
+                  />
+                  <div className="border-t pt-3">
+                    <p className="text-sm font-medium mb-2">Primary Contact</p>
+                    <Input
+                      placeholder="Contact Name *"
+                      value={newBrandForm.primaryContactName}
+                      onChange={(e) =>
+                        setNewBrandForm({
+                          ...newBrandForm,
+                          primaryContactName: e.target.value,
+                        })
+                      }
+                      className="mb-2"
+                    />
+                    <Input
+                      placeholder="Contact Email"
+                      type="email"
+                      value={newBrandForm.primaryContactEmail}
+                      onChange={(e) =>
+                        setNewBrandForm({
+                          ...newBrandForm,
+                          primaryContactEmail: e.target.value,
+                        })
+                      }
+                      className="mb-2"
+                    />
+                    <Input
+                      placeholder="Contact Phone *"
+                      value={newBrandForm.primaryContactPhone}
+                      onChange={(e) =>
+                        setNewBrandForm({
+                          ...newBrandForm,
+                          primaryContactPhone: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Attendee Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Attendee Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Full Name *"
+                  value={walkInForm.name}
+                  onChange={(e) =>
+                    setWalkInForm({
+                      ...walkInForm,
+                      name: e.target.value,
+                    })
+                  }
+                />
+                <Input
+                  placeholder="Email"
+                  type="email"
+                  value={walkInForm.email}
+                  onChange={(e) =>
+                    setWalkInForm({
+                      ...walkInForm,
+                      email: e.target.value,
+                    })
+                  }
+                />
+                <Input
+                  placeholder="Phone Number *"
+                  value={walkInForm.phone}
+                  onChange={(e) =>
+                    setWalkInForm({
+                      ...walkInForm,
+                      phone: e.target.value,
+                    })
+                  }
+                />
+                <Input
+                  placeholder="Table/Seat Assignment (Optional)"
+                  value={walkInForm.tableNumber}
+                  onChange={(e) =>
+                    setWalkInForm({
+                      ...walkInForm,
+                      tableNumber: e.target.value,
+                    })
+                  }
+                />
+                <Textarea
+                  placeholder="Notes (Optional)"
+                  value={walkInForm.notes}
+                  onChange={(e) =>
+                    setWalkInForm({
+                      ...walkInForm,
+                      notes: e.target.value,
+                    })
+                  }
+                />
+              </CardContent>
+            </Card>
+
+            <div className="pt-4 border-t">
+              <Button
+                onClick={handleWalkInSubmit}
+                className="w-full gap-2"
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Register Walk-in & Check In
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Check-in Sheet for Brand */}
       <Sheet open={checkInSheetOpen} onOpenChange={setCheckInSheetOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-xl">
-          {selectedBrand && (
+          {selectedRegistration && (
             <>
               <SheetHeader>
                 <SheetTitle>
-                  Check-in Attendees - {selectedBrand.brandId?.businessName}
+                  Check-in Attendees -{' '}
+                  {selectedRegistration.brandId?.businessName}
                 </SheetTitle>
                 <SheetDescription>
-                  Package: {selectedBrand.packageTier} | Expected:{' '}
-                  {selectedBrand.pax} people | Checked In:{' '}
-                  {brandAttendees[selectedBrand._id]?.filter(
+                  Package: {selectedRegistration.packageTier} | Expected:{' '}
+                  {selectedRegistration.pax} people | Checked In:{' '}
+                  {brandAttendees[selectedRegistration._id]?.filter(
                     (a) => a.status === 'Checked-In'
                   ).length || 0}
                 </SheetDescription>
@@ -1796,18 +1913,18 @@ export default function EventCheckin() {
                           Check-in Progress
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          {brandAttendees[selectedBrand._id]?.filter(
+                          {brandAttendees[selectedRegistration._id]?.filter(
                             (a) => a.status === 'Checked-In'
                           ).length || 0}
-                          /{selectedBrand.pax}
+                          /{selectedRegistration.pax}
                         </span>
                       </div>
                       <Progress
                         value={
-                          ((brandAttendees[selectedBrand._id]?.filter(
+                          ((brandAttendees[selectedRegistration._id]?.filter(
                             (a) => a.status === 'Checked-In'
                           ).length || 0) /
-                            selectedBrand.pax) *
+                            selectedRegistration.pax) *
                           100
                         }
                         className="h-2"
@@ -1916,39 +2033,41 @@ export default function EventCheckin() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {brandAttendees[selectedBrand._id]?.map((attendee) => (
-                        <div
-                          key={attendee._id}
-                          className="flex items-center space-x-3"
-                        >
-                          <Checkbox
-                            id={attendee._id}
-                            checked={selectedAttendees[attendee._id] || false}
-                            onCheckedChange={(checked) => {
-                              setSelectedAttendees((prev) => ({
-                                ...prev,
-                                [attendee._id]: checked,
-                              }));
-                            }}
-                            disabled={attendee.status !== 'Registered'}
-                          />
-                          <Label htmlFor={attendee._id} className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span>{attendee.name || 'Unnamed'}</span>
-                              {attendee.status === 'Checked-In' && (
-                                <Badge variant="default" className="ml-2">
-                                  Checked In
-                                </Badge>
-                              )}
-                              {attendee.status === 'No-Show' && (
-                                <Badge variant="destructive" className="ml-2">
-                                  No-Show
-                                </Badge>
-                              )}
-                            </div>
-                          </Label>
-                        </div>
-                      ))}
+                      {brandAttendees[selectedRegistration._id]?.map(
+                        (attendee) => (
+                          <div
+                            key={attendee._id}
+                            className="flex items-center space-x-3"
+                          >
+                            <Checkbox
+                              id={attendee._id}
+                              checked={selectedAttendees[attendee._id] || false}
+                              onCheckedChange={(checked) => {
+                                setSelectedAttendees((prev) => ({
+                                  ...prev,
+                                  [attendee._id]: checked,
+                                }));
+                              }}
+                              disabled={attendee.status !== 'Registered'}
+                            />
+                            <Label htmlFor={attendee._id} className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <span>{attendee.name || 'Unnamed'}</span>
+                                {attendee.status === 'Checked-In' && (
+                                  <Badge variant="default" className="ml-2">
+                                    Checked In
+                                  </Badge>
+                                )}
+                                {attendee.status === 'No-Show' && (
+                                  <Badge variant="destructive" className="ml-2">
+                                    No-Show
+                                  </Badge>
+                                )}
+                              </div>
+                            </Label>
+                          </div>
+                        )
+                      )}
 
                       <Button
                         className="w-full"
@@ -1986,74 +2105,79 @@ export default function EventCheckin() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {brandAttendees[selectedBrand._id]?.map((attendee) => (
-                        <div
-                          key={attendee._id}
-                          className="flex items-center justify-between border-b pb-3"
-                        >
-                          <div>
-                            <p className="font-medium">
-                              {attendee.name || 'Unnamed'}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {attendee.email || attendee.phone}
-                            </p>
-                            {attendee.tableNumber && (
-                              <Badge variant="outline" className="mt-1">
-                                Table: {attendee.tableNumber}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            {attendee.status === 'Registered' && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    handleAttendeeCheckIn(
-                                      attendee._id,
-                                      attendee.name
-                                    )
-                                  }
-                                  disabled={actionLoading}
-                                >
-                                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                                  Check In
-                                </Button>
+                      {brandAttendees[selectedRegistration._id]?.map(
+                        (attendee) => (
+                          <div
+                            key={attendee._id}
+                            className="flex items-center justify-between border-b pb-3"
+                          >
+                            <div>
+                              <p className="font-medium">
+                                {attendee.name || 'Unnamed'}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {attendee.email || attendee.phone}
+                              </p>
+                              {attendee.tableNumber && (
+                                <Badge variant="outline" className="mt-1">
+                                  Table: {attendee.tableNumber}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              {attendee.status === 'Registered' && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      handleAttendeeCheckIn(
+                                        attendee._id,
+                                        attendee.name
+                                      )
+                                    }
+                                    disabled={actionLoading}
+                                  >
+                                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                                    Check In
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      handleMarkNoShow(
+                                        attendee._id,
+                                        attendee.name
+                                      )
+                                    }
+                                    disabled={actionLoading}
+                                  >
+                                    <UserX className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                              {attendee.status === 'Checked-In' && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() =>
-                                    handleMarkNoShow(
+                                    handleUndoCheckIn(
                                       attendee._id,
                                       attendee.name
                                     )
                                   }
                                   disabled={actionLoading}
                                 >
-                                  <UserX className="h-4 w-4" />
+                                  <RotateCcw className="h-4 w-4 mr-2" />
+                                  Undo
                                 </Button>
-                              </>
-                            )}
-                            {attendee.status === 'Checked-In' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  handleUndoCheckIn(attendee._id, attendee.name)
-                                }
-                                disabled={actionLoading}
-                              >
-                                <RotateCcw className="h-4 w-4 mr-2" />
-                                Undo
-                              </Button>
-                            )}
-                            {attendee.status === 'No-Show' && (
-                              <Badge variant="destructive">No-Show</Badge>
-                            )}
+                              )}
+                              {attendee.status === 'No-Show' && (
+                                <Badge variant="destructive">No-Show</Badge>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      )}
                     </div>
                   </CardContent>
                 </Card>
